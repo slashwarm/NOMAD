@@ -8,6 +8,7 @@ import { authenticate, demoUploadBlock } from '../middleware/auth';
 import { requireTripAccess } from '../middleware/tripAccess';
 import { broadcast } from '../websocket';
 import { AuthRequest, TripFile } from '../types';
+import { checkPermission } from '../services/permissions';
 
 const router = express.Router({ mergeParams: true });
 
@@ -109,6 +110,9 @@ router.get('/', authenticate, (req: Request, res: Response) => {
 router.post('/', authenticate, requireTripAccess, demoUploadBlock, upload.single('file'), (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId } = req.params;
+  const { user_id: tripOwnerId } = authReq.trip!;
+  if (!checkPermission('file_upload', authReq.user.role, tripOwnerId, authReq.user.id, tripOwnerId !== authReq.user.id))
+    return res.status(403).json({ error: 'No permission to upload files' });
   const { place_id, description, reservation_id } = req.body;
 
   if (!req.file) {
@@ -141,8 +145,10 @@ router.put('/:id', authenticate, (req: Request, res: Response) => {
   const { tripId, id } = req.params;
   const { description, place_id, reservation_id } = req.body;
 
-  const trip = verifyTripOwnership(tripId, authReq.user.id);
-  if (!trip) return res.status(404).json({ error: 'Trip not found' });
+  const access = canAccessTrip(tripId, authReq.user.id);
+  if (!access) return res.status(404).json({ error: 'Trip not found' });
+  if (!checkPermission('file_edit', authReq.user.role, access.user_id, authReq.user.id, access.user_id !== authReq.user.id))
+    return res.status(403).json({ error: 'No permission to edit files' });
 
   const file = db.prepare('SELECT * FROM trip_files WHERE id = ? AND trip_id = ?').get(id, tripId) as TripFile | undefined;
   if (!file) return res.status(404).json({ error: 'File not found' });
@@ -189,8 +195,10 @@ router.delete('/:id', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId, id } = req.params;
 
-  const trip = verifyTripOwnership(tripId, authReq.user.id);
-  if (!trip) return res.status(404).json({ error: 'Trip not found' });
+  const access = canAccessTrip(tripId, authReq.user.id);
+  if (!access) return res.status(404).json({ error: 'Trip not found' });
+  if (!checkPermission('file_delete', authReq.user.role, access.user_id, authReq.user.id, access.user_id !== authReq.user.id))
+    return res.status(403).json({ error: 'No permission to delete files' });
 
   const file = db.prepare('SELECT * FROM trip_files WHERE id = ? AND trip_id = ?').get(id, tripId) as TripFile | undefined;
   if (!file) return res.status(404).json({ error: 'File not found' });

@@ -13,6 +13,7 @@ import { db } from '../db/database';
 import { authenticate, demoUploadBlock } from '../middleware/auth';
 import { JWT_SECRET } from '../config';
 import { encryptMfaSecret, decryptMfaSecret } from '../services/mfaCrypto';
+import { getAllPermissions } from '../services/permissions';
 import { randomBytes, createHash } from 'crypto';
 import { revokeUserSessions } from '../mcp';
 import { AuthRequest, User } from '../types';
@@ -191,6 +192,7 @@ router.get('/app-config', (_req: Request, res: Response) => {
     demo_email: isDemo ? 'demo@trek.app' : undefined,
     demo_password: isDemo ? 'demo12345' : undefined,
     timezone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    permissions: getAllPermissions(),
   });
 });
 

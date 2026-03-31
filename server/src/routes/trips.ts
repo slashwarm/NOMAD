@@ -3,10 +3,11 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { db, canAccessTrip, isOwner } from '../db/database';
+import { db, canAccessTrip, getTripOwnerId } from '../db/database';
 import { authenticate, demoUploadBlock } from '../middleware/auth';
 import { broadcast } from '../websocket';
 import { AuthRequest, Trip, User } from '../types';
+import { checkPermission } from '../services/permissions';
 
 const router = express.Router();
 
@@ -135,6 +136,8 @@ router.get('/', authenticate, (req: Request, res: Response) => {
 
 router.post('/', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
+  if (!checkPermission('trip_create', authReq.user.role, null, authReq.user.id, false))
+    return res.status(403).json({ error: 'No permission to create trips' });
   const { title, description, start_date, end_date, currency } = req.body;
   if (!title) return res.status(400).json({ error: 'Title is required' });
   if (start_date && end_date && new Date(end_date) < new Date(start_date))
@@ -168,9 +171,25 @@ router.put('/:id', authenticate, (req: Request, res: Response) => {
   const access = canAccessTrip(req.params.id, authReq.user.id);
   if (!access) return res.status(404).json({ error: 'Trip not found' });
 
-  const ownerOnly = req.body.is_archived !== undefined || req.body.cover_image !== undefined;
-  if (ownerOnly && !isOwner(req.params.id, authReq.user.id))
-    return res.status(403).json({ error: 'Only the owner can change this setting' });
+  const tripOwnerId = access.user_id;
+  const isMember = access.user_id !== authReq.user.id;
+
+  // Archive check
+  if (req.body.is_archived !== undefined) {
+    if (!checkPermission('trip_archive', authReq.user.role, tripOwnerId, authReq.user.id, isMember))
+      return res.status(403).json({ error: 'No permission to archive/unarchive this trip' });
+  }
+  // Cover image check
+  if (req.body.cover_image !== undefined) {
+    if (!checkPermission('trip_cover_upload', authReq.user.role, tripOwnerId, authReq.user.id, isMember))
+      return res.status(403).json({ error: 'No permission to change cover image' });
+  }
+  // General edit check (title, description, dates, currency)
+  const editFields = ['title', 'description', 'start_date', 'end_date', 'currency'];
+  if (editFields.some(f => req.body[f] !== undefined)) {
+    if (!checkPermission('trip_edit', authReq.user.role, tripOwnerId, authReq.user.id, isMember))
+      return res.status(403).json({ error: 'No permission to edit this trip' });
+  }
 
   const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(req.params.id) as Trip | undefined;
   if (!trip) return res.status(404).json({ error: 'Trip not found' });
@@ -203,8 +222,11 @@ router.put('/:id', authenticate, (req: Request, res: Response) => {
 
 router.post('/:id/cover', authenticate, demoUploadBlock, uploadCover.single('cover'), (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-  if (!isOwner(req.params.id, authReq.user.id))
-    return res.status(403).json({ error: 'Only the owner can change the cover image' });
+  const tripOwnerId = getTripOwnerId(req.params.id);
+  if (!tripOwnerId) return res.status(404).json({ error: 'Trip not found' });
+  const isMember = tripOwnerId !== authReq.user.id && !!canAccessTrip(req.params.id, authReq.user.id);
+  if (!checkPermission('trip_cover_upload', authReq.user.role, tripOwnerId, authReq.user.id, isMember))
+    return res.status(403).json({ error: 'No permission to change the cover image' });
 
   const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(req.params.id) as Trip | undefined;
   if (!trip) return res.status(404).json({ error: 'Trip not found' });
@@ -226,8 +248,10 @@ router.post('/:id/cover', authenticate, demoUploadBlock, uploadCover.single('cov
 
 router.delete('/:id', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-  if (!isOwner(req.params.id, authReq.user.id))
-    return res.status(403).json({ error: 'Only the owner can delete the trip' });
+  const tripOwnerId = getTripOwnerId(req.params.id);
+  if (!tripOwnerId) return res.status(404).json({ error: 'Trip not found' });
+  if (!checkPermission('trip_delete', authReq.user.role, tripOwnerId, authReq.user.id, false))
+    return res.status(403).json({ error: 'No permission to delete this trip' });
   const deletedTripId = Number(req.params.id);
   db.prepare('DELETE FROM trips WHERE id = ?').run(req.params.id);
   res.json({ success: true });
@@ -239,7 +263,7 @@ router.get('/:id/members', authenticate, (req: Request, res: Response) => {
   if (!canAccessTrip(req.params.id, authReq.user.id))
     return res.status(404).json({ error: 'Trip not found' });
 
-  const trip = db.prepare('SELECT user_id FROM trips WHERE id = ?').get(req.params.id) as { user_id: number };
+  const tripOwnerId = getTripOwnerId(req.params.id)!;
   const members = db.prepare(`
     SELECT u.id, u.username, u.email, u.avatar,
       CASE WHEN u.id = ? THEN 'owner' ELSE 'member' END as role,
@@ -250,9 +274,9 @@ router.get('/:id/members', authenticate, (req: Request, res: Response) => {
     LEFT JOIN users ib ON ib.id = m.invited_by
     WHERE m.trip_id = ?
     ORDER BY m.added_at ASC
-  `).all(trip.user_id, req.params.id) as { id: number; username: string; email: string; avatar: string | null; role: string; added_at: string; invited_by_username: string | null }[];
+  `).all(tripOwnerId, req.params.id) as { id: number; username: string; email: string; avatar: string | null; role: string; added_at: string; invited_by_username: string | null }[];
 
-  const owner = db.prepare('SELECT id, username, email, avatar FROM users WHERE id = ?').get(trip.user_id) as Pick<User, 'id' | 'username' | 'email' | 'avatar'>;
+  const owner = db.prepare('SELECT id, username, email, avatar FROM users WHERE id = ?').get(tripOwnerId) as Pick<User, 'id' | 'username' | 'email' | 'avatar'>;
 
   res.json({
     owner: { ...owner, role: 'owner', avatar_url: owner.avatar ? `/uploads/avatars/${owner.avatar}` : null },
@@ -266,6 +290,11 @@ router.post('/:id/members', authenticate, (req: Request, res: Response) => {
   if (!canAccessTrip(req.params.id, authReq.user.id))
     return res.status(404).json({ error: 'Trip not found' });
 
+  const tripOwnerId = getTripOwnerId(req.params.id)!;
+  const isMember = tripOwnerId !== authReq.user.id;
+  if (!checkPermission('member_manage', authReq.user.role, tripOwnerId, authReq.user.id, isMember))
+    return res.status(403).json({ error: 'No permission to manage members' });
+
   const { identifier } = req.body;
   if (!identifier) return res.status(400).json({ error: 'Email or username required' });
 
@@ -275,8 +304,7 @@ router.post('/:id/members', authenticate, (req: Request, res: Response) => {
 
   if (!target) return res.status(404).json({ error: 'User not found' });
 
-  const trip = db.prepare('SELECT user_id FROM trips WHERE id = ?').get(req.params.id) as { user_id: number };
-  if (target.id === trip.user_id)
+  if (target.id === tripOwnerId)
     return res.status(400).json({ error: 'Trip owner is already a member' });
 
   const existing = db.prepare('SELECT id FROM trip_members WHERE trip_id = ? AND user_id = ?').get(req.params.id, target.id);
@@ -300,8 +328,12 @@ router.delete('/:id/members/:userId', authenticate, (req: Request, res: Response
 
   const targetId = parseInt(req.params.userId);
   const isSelf = targetId === authReq.user.id;
-  if (!isSelf && !isOwner(req.params.id, authReq.user.id))
-    return res.status(403).json({ error: 'No permission' });
+  if (!isSelf) {
+    const tripOwnerId = getTripOwnerId(req.params.id)!;
+    const memberCheck = tripOwnerId !== authReq.user.id;
+    if (!checkPermission('member_manage', authReq.user.role, tripOwnerId, authReq.user.id, memberCheck))
+      return res.status(403).json({ error: 'No permission to remove members' });
+  }
 
   db.prepare('DELETE FROM trip_members WHERE trip_id = ? AND user_id = ?').run(req.params.id, targetId);
   res.json({ success: true });
