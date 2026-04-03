@@ -30,7 +30,6 @@ import {
 const router = express.Router();
 
 // ── Dual auth middleware (JWT or ephemeral token for <img> src) ─────────────
-
 function authFromQuery(req: Request, res: Response, next: NextFunction) {
   const queryToken = req.query.token as string | undefined;
   if (queryToken) {
@@ -88,64 +87,13 @@ router.post('/search', authenticate, async (req: Request, res: Response) => {
   res.json({ assets: result.assets });
 });
 
-// ── Trip Photos (selected by user) ────────────────────────────────────────
+// ── Asset Details ──────────────────────────────────────────────────────────
 
 router.get('/trips/:tripId/photos', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId } = req.params;
   if (!canAccessTrip(tripId, authReq.user.id)) return res.status(404).json({ error: 'Trip not found' });
   res.json({ photos: listTripPhotos(tripId, authReq.user.id) });
-});
-
-router.post('/trips/:tripId/photos', authenticate, (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-  const { tripId } = req.params;
-  if (!canAccessTrip(tripId, authReq.user.id)) return res.status(404).json({ error: 'Trip not found' });
-  const { asset_ids, shared = true } = req.body;
-
-  if (!Array.isArray(asset_ids) || asset_ids.length === 0) {
-    return res.status(400).json({ error: 'asset_ids required' });
-  }
-
-  const added = addTripPhotos(tripId, authReq.user.id, asset_ids, shared);
-  res.json({ success: true, added });
-  broadcast(tripId, 'memories:updated', { userId: authReq.user.id }, req.headers['x-socket-id'] as string);
-
-  // Notify trip members about shared photos
-  if (shared && added > 0) {
-    import('../services/notifications').then(({ notifyTripMembers }) => {
-      const tripInfo = db.prepare('SELECT title FROM trips WHERE id = ?').get(tripId) as { title: string } | undefined;
-      notifyTripMembers(Number(tripId), authReq.user.id, 'photos_shared', { trip: tripInfo?.title || 'Untitled', actor: authReq.user.email, count: String(added) }).catch(() => {});
-    });
-  }
-});
-
-router.delete('/trips/:tripId/photos/:assetId', authenticate, (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-  if (!canAccessTrip(req.params.tripId, authReq.user.id)) return res.status(404).json({ error: 'Trip not found' });
-  removeTripPhoto(req.params.tripId, authReq.user.id, req.params.assetId);
-  res.json({ success: true });
-  broadcast(req.params.tripId, 'memories:updated', { userId: authReq.user.id }, req.headers['x-socket-id'] as string);
-});
-
-router.put('/trips/:tripId/photos/:assetId/sharing', authenticate, (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-  if (!canAccessTrip(req.params.tripId, authReq.user.id)) return res.status(404).json({ error: 'Trip not found' });
-  const { shared } = req.body;
-  togglePhotoSharing(req.params.tripId, authReq.user.id, req.params.assetId, shared);
-  res.json({ success: true });
-  broadcast(req.params.tripId, 'memories:updated', { userId: authReq.user.id }, req.headers['x-socket-id'] as string);
-});
-
-// ── Asset Details ──────────────────────────────────────────────────────────
-
-router.get('/assets/:assetId/info', authenticate, async (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-  const { assetId } = req.params;
-  if (!isValidAssetId(assetId)) return res.status(400).json({ error: 'Invalid asset ID' });
-  const result = await getAssetInfo(authReq.user.id, assetId);
-  if (result.error) return res.status(result.status!).json({ error: result.error });
-  res.json(result.data);
 });
 
 // ── Proxy Immich Assets ────────────────────────────────────────────────────
@@ -181,12 +129,6 @@ router.get('/albums', authenticate, async (req: Request, res: Response) => {
   res.json({ albums: result.albums });
 });
 
-router.get('/trips/:tripId/album-links', authenticate, (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-  if (!canAccessTrip(req.params.tripId, authReq.user.id)) return res.status(404).json({ error: 'Trip not found' });
-  res.json({ links: listAlbumLinks(req.params.tripId) });
-});
-
 router.post('/trips/:tripId/album-links', authenticate, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId } = req.params;
@@ -195,12 +137,6 @@ router.post('/trips/:tripId/album-links', authenticate, async (req: Request, res
   if (!album_id) return res.status(400).json({ error: 'album_id required' });
   const result = createAlbumLink(tripId, authReq.user.id, album_id, album_name);
   if (!result.success) return res.status(400).json({ error: result.error });
-  res.json({ success: true });
-});
-
-router.delete('/trips/:tripId/album-links/:linkId', authenticate, (req: Request, res: Response) => {
-  const authReq = req as AuthRequest;
-  deleteAlbumLink(req.params.linkId, req.params.tripId, authReq.user.id);
   res.json({ success: true });
 });
 

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { authenticate, adminOnly } from '../middleware/auth';
-import { AuthRequest } from '../types';
+import { db } from '../db/database';
+import { AuthRequest, Addon } from '../types';
 import { writeAudit, getClientIp, logInfo } from '../services/auditLog';
 import * as svc from '../services/adminService';
 
@@ -264,21 +265,100 @@ router.delete('/packing-templates/:templateId/items/:itemId', (req: Request, res
 // ── Addons ─────────────────────────────────────────────────────────────────
 
 router.get('/addons', (_req: Request, res: Response) => {
-  res.json({ addons: svc.listAddons() });
+  const addons = db.prepare('SELECT * FROM addons ORDER BY sort_order, id').all() as Addon[];
+  const providers = db.prepare(`
+    SELECT id, name, description, icon, enabled, config, sort_order
+    FROM photo_providers
+    ORDER BY sort_order, id
+  `).all() as Array<{ id: string; name: string; description?: string | null; icon: string; enabled: number; config: string; sort_order: number }>;
+  const fields = db.prepare(`
+    SELECT provider_id, field_key, label, input_type, placeholder, required, secret, settings_key, payload_key, sort_order
+    FROM photo_provider_fields
+    ORDER BY sort_order, id
+  `).all() as Array<{
+    provider_id: string;
+    field_key: string;
+    label: string;
+    input_type: string;
+    placeholder?: string | null;
+    required: number;
+    secret: number;
+    settings_key?: string | null;
+    payload_key?: string | null;
+    sort_order: number;
+  }>;
+  const fieldsByProvider = new Map<string, typeof fields>();
+  for (const field of fields) {
+    const arr = fieldsByProvider.get(field.provider_id) || [];
+    arr.push(field);
+    fieldsByProvider.set(field.provider_id, arr);
+  }
+
+  res.json({
+    addons: [
+      ...addons.map(a => ({ ...a, enabled: !!a.enabled, config: JSON.parse(a.config || '{}') })),
+      ...providers.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        type: 'photo_provider',
+        icon: p.icon,
+        enabled: !!p.enabled,
+        config: JSON.parse(p.config || '{}'),
+        fields: (fieldsByProvider.get(p.id) || []).map(f => ({
+          key: f.field_key,
+          label: f.label,
+          input_type: f.input_type,
+          placeholder: f.placeholder || '',
+          required: !!f.required,
+          secret: !!f.secret,
+          settings_key: f.settings_key || null,
+          payload_key: f.payload_key || null,
+          sort_order: f.sort_order,
+        })),
+        sort_order: p.sort_order,
+      })),
+    ],
+  });
 });
 
 router.put('/addons/:id', (req: Request, res: Response) => {
-  const result = svc.updateAddon(req.params.id, req.body);
-  if ('error' in result) return res.status(result.status!).json({ error: result.error });
+  const addon = db.prepare('SELECT * FROM addons WHERE id = ?').get(req.params.id) as Addon | undefined;
+  const provider = db.prepare('SELECT * FROM photo_providers WHERE id = ?').get(req.params.id) as { id: string; name: string; description?: string | null; icon: string; enabled: number; config: string; sort_order: number } | undefined;
+  if (!addon && !provider) return res.status(404).json({ error: 'Addon not found' });
+  const { enabled, config } = req.body;
+  if (addon) {
+    if (enabled !== undefined) db.prepare('UPDATE addons SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, req.params.id);
+    if (config !== undefined) db.prepare('UPDATE addons SET config = ? WHERE id = ?').run(JSON.stringify(config), req.params.id);
+  } else {
+    if (enabled !== undefined) db.prepare('UPDATE photo_providers SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, req.params.id);
+    if (config !== undefined) db.prepare('UPDATE photo_providers SET config = ? WHERE id = ?').run(JSON.stringify(config), req.params.id);
+  }
+  const updatedAddon = db.prepare('SELECT * FROM addons WHERE id = ?').get(req.params.id) as Addon | undefined;
+  const updatedProvider = db.prepare('SELECT * FROM photo_providers WHERE id = ?').get(req.params.id) as { id: string; name: string; description?: string | null; icon: string; enabled: number; config: string; sort_order: number } | undefined;
+  const updated = updatedAddon
+    ? { ...updatedAddon, enabled: !!updatedAddon.enabled, config: JSON.parse(updatedAddon.config || '{}') }
+    : updatedProvider
+      ? {
+        id: updatedProvider.id,
+        name: updatedProvider.name,
+        description: updatedProvider.description,
+        type: 'photo_provider',
+        icon: updatedProvider.icon,
+        enabled: !!updatedProvider.enabled,
+        config: JSON.parse(updatedProvider.config || '{}'),
+        sort_order: updatedProvider.sort_order,
+      }
+      : null;
   const authReq = req as AuthRequest;
   writeAudit({
     userId: authReq.user.id,
     action: 'admin.addon_update',
     resource: String(req.params.id),
     ip: getClientIp(req),
-    details: result.auditDetails,
+    details: { enabled: req.body.enabled, config: req.body.config },
   });
-  res.json({ addon: result.addon });
+  res.json({ addon: updated });
 });
 
 // ── MCP Tokens ─────────────────────────────────────────────────────────────
@@ -300,12 +380,9 @@ router.post('/rotate-jwt-secret', (req: Request, res: Response) => {
   if (result.error) return res.status(result.status!).json({ error: result.error });
   const authReq = req as AuthRequest;
   writeAudit({
-    user_id: authReq.user?.id ?? null,
-    username: authReq.user?.username ?? 'unknown',
+    userId: authReq.user?.id ?? null,
     action: 'admin.rotate_jwt_secret',
-    target_type: 'system',
-    target_id: null,
-    details: null,
+    resource: 'system',
     ip: getClientIp(req),
   });
   res.json({ success: true });

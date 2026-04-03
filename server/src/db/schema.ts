@@ -18,6 +18,10 @@ function createTables(db: Database.Database): void {
       mfa_enabled INTEGER DEFAULT 0,
       mfa_secret TEXT,
       mfa_backup_codes TEXT,
+      synology_url TEXT,
+      synology_username TEXT,
+      synology_password TEXT,
+      synology_sid TEXT,
       must_change_password INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -220,6 +224,31 @@ function createTables(db: Database.Database): void {
       enabled INTEGER DEFAULT 0,
       config TEXT DEFAULT '{}',
       sort_order INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS photo_providers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT DEFAULT 'Image',
+      enabled INTEGER DEFAULT 0,
+      config TEXT DEFAULT '{}',
+      sort_order INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS photo_provider_fields (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider_id TEXT NOT NULL REFERENCES photo_providers(id) ON DELETE CASCADE,
+      field_key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      input_type TEXT NOT NULL DEFAULT 'text',
+      placeholder TEXT,
+      required INTEGER DEFAULT 0,
+      secret INTEGER DEFAULT 0,
+      settings_key TEXT,
+      payload_key TEXT,
+      sort_order INTEGER DEFAULT 0,
+      UNIQUE(provider_id, field_key)
     );
 
     -- Vacay addon tables

@@ -30,6 +30,35 @@ interface McpToken {
   last_used_at: string | null
 }
 
+interface ProviderField {
+  key: string
+  label: string
+  input_type: string
+  placeholder?: string | null
+  required: boolean
+  secret: boolean
+  settings_key?: string | null
+  payload_key?: string | null
+  sort_order: number
+}
+
+interface PhotoProviderAddon {
+  id: string
+  name: string
+  type: string
+  enabled: boolean
+  config?: Record<string, unknown>
+  fields?: ProviderField[]
+}
+
+interface ProviderConfig {
+  settings_get?: string
+  settings_put?: string
+  status_get?: string
+  test_get?: string
+  test_post?: string
+}
+
 const MAP_PRESETS: MapPreset[] = [
   { name: 'OpenStreetMap', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
   { name: 'OpenStreetMap DE', url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png' },
@@ -116,7 +145,7 @@ export default function SettingsPage(): React.ReactElement {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean | 'blocked'>(false)
   const avatarInputRef = React.useRef<HTMLInputElement>(null)
   const { settings, updateSetting, updateSettings } = useSettingsStore()
-  const { isEnabled: addonEnabled, loadAddons } = useAddonStore()
+  const { isEnabled: addonEnabled, loadAddons, addons } = useAddonStore()
   const { t, locale } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
@@ -130,10 +159,10 @@ export default function SettingsPage(): React.ReactElement {
   useEffect(() => {
     authApi.getAppConfig?.().then(c => setAppVersion(c?.version)).catch(() => {})
   }, [])
-  const [immichUrl, setImmichUrl] = useState('')
-  const [immichApiKey, setImmichApiKey] = useState('')
-  const [immichConnected, setImmichConnected] = useState(false)
-  const [immichTesting, setImmichTesting] = useState(false)
+  const activePhotoProviders = addons.filter(a => a.type === 'photo_provider' && a.enabled)
+  const [providerValues, setProviderValues] = useState<Record<string, Record<string, string>>>({})
+  const [providerConnected, setProviderConnected] = useState<Record<string, boolean>>({})
+  const [providerTesting, setProviderTesting] = useState<Record<string, boolean>>({})
 
   const handleMapClick = useCallback((mapInfo) => {
     setDefaultLat(mapInfo.latlng.lat)
@@ -143,49 +172,123 @@ export default function SettingsPage(): React.ReactElement {
   useEffect(() => {
     loadAddons()
   }, [])
-
-  useEffect(() => {
-    if (memoriesEnabled) {
-      apiClient.get('/integrations/immich/settings').then(r2 => {
-        setImmichUrl(r2.data.immich_url || '')
-        setImmichConnected(r2.data.connected)
-      }).catch(() => {})
-    }
-  }, [memoriesEnabled])
-
-  const [immichTestPassed, setImmichTestPassed] = useState(false)
-
-  const handleSaveImmich = async () => {
-    setSaving(s => ({ ...s, immich: true }))
-    try {
-      const saveRes = await apiClient.put('/integrations/immich/settings', { immich_url: immichUrl, immich_api_key: immichApiKey || undefined })
-      if (saveRes.data.warning) toast.warning(saveRes.data.warning)
-      toast.success(t('memories.saved'))
-      const res = await apiClient.get('/integrations/immich/status')
-      setImmichConnected(res.data.connected)
-      setImmichTestPassed(false)
-    } catch {
-      toast.error(t('memories.connectionError'))
-    } finally {
-      setSaving(s => ({ ...s, immich: false }))
+  const getProviderConfig = (provider: PhotoProviderAddon): ProviderConfig => {
+    const raw = provider.config || {}
+    return {
+      settings_get: typeof raw.settings_get === 'string' ? raw.settings_get : undefined,
+      settings_put: typeof raw.settings_put === 'string' ? raw.settings_put : undefined,
+      status_get: typeof raw.status_get === 'string' ? raw.status_get : undefined,
+      test_get: typeof raw.test_get === 'string' ? raw.test_get : undefined,
+      test_post: typeof raw.test_post === 'string' ? raw.test_post : undefined,
     }
   }
 
-  const handleTestImmich = async () => {
-    setImmichTesting(true)
+  const getProviderFields = (provider: PhotoProviderAddon): ProviderField[] => {
+    return [...(provider.fields || [])].sort((a, b) => a.sort_order - b.sort_order)
+  }
+
+  const buildProviderPayload = (provider: PhotoProviderAddon): Record<string, unknown> => {
+    const values = providerValues[provider.id] || {}
+    const payload: Record<string, unknown> = {}
+    for (const field of getProviderFields(provider)) {
+      const payloadKey = field.payload_key || field.settings_key || field.key
+      const value = (values[field.key] || '').trim()
+      if (field.secret && !value) continue
+      payload[payloadKey] = value
+    }
+    return payload
+  }
+
+  const refreshProviderConnection = async (provider: PhotoProviderAddon) => {
+    const cfg = getProviderConfig(provider)
+    const statusPath = cfg.status_get
+    if (!statusPath) return
     try {
-      const res = await apiClient.post('/integrations/immich/test', { immich_url: immichUrl, immich_api_key: immichApiKey })
-      if (res.data.connected) {
-        toast.success(`${t('memories.connectionSuccess')} — ${res.data.user?.name || ''}`)
-        setImmichTestPassed(true)
+      const res = await apiClient.get(statusPath)
+      setProviderConnected(prev => ({ ...prev, [provider.id]: !!res.data?.connected }))
+    } catch {
+      setProviderConnected(prev => ({ ...prev, [provider.id]: false }))
+    }
+  }
+
+  const activeProviderSignature = activePhotoProviders.map(p => p.id).join('|')
+
+  useEffect(() => {
+    for (const provider of activePhotoProviders as PhotoProviderAddon[]) {
+      const cfg = getProviderConfig(provider)
+      const fields = getProviderFields(provider)
+      if (cfg.settings_get) {
+        apiClient.get(cfg.settings_get).then(res => {
+          const nextValues: Record<string, string> = {}
+          for (const field of fields) {
+            // Don't populate secret fields into state - they should remain empty until user edits
+            if (field.secret) continue
+            const sourceKey = field.settings_key || field.payload_key || field.key
+            const rawValue = (res.data as Record<string, unknown>)[sourceKey]
+            nextValues[field.key] = typeof rawValue === 'string' ? rawValue : rawValue != null ? String(rawValue) : ''
+          }
+          setProviderValues(prev => ({
+            ...prev,
+            [provider.id]: { ...(prev[provider.id] || {}), ...nextValues },
+          }))
+          if (typeof res.data?.connected === 'boolean') {
+            setProviderConnected(prev => ({ ...prev, [provider.id]: !!res.data.connected }))
+          }
+        }).catch(() => {})
+      }
+      refreshProviderConnection(provider).catch(() => {})
+    }
+  }, [activeProviderSignature])
+
+  const handleProviderFieldChange = (providerId: string, key: string, value: string) => {
+    setProviderValues(prev => ({
+      ...prev,
+      [providerId]: { ...(prev[providerId] || {}), [key]: value },
+    }))
+  }
+
+  const isProviderSaveDisabled = (provider: PhotoProviderAddon): boolean => {
+    const values = providerValues[provider.id] || {}
+    return getProviderFields(provider).some(field => {
+      if (!field.required) return false
+      return !(values[field.key] || '').trim()
+    })
+  }
+
+  const handleSaveProvider = async (provider: PhotoProviderAddon) => {
+    const cfg = getProviderConfig(provider)
+    if (!cfg.settings_put) return
+    setSaving(s => ({ ...s, [provider.id]: true }))
+    try {
+      await apiClient.put(cfg.settings_put, buildProviderPayload(provider))
+      await refreshProviderConnection(provider)
+      toast.success(`${provider.name} settings saved`)
+    } catch {
+      toast.error(`Could not save ${provider.name} settings`)
+    } finally {
+      setSaving(s => ({ ...s, [provider.id]: false }))
+    }
+  }
+
+  const handleTestProvider = async (provider: PhotoProviderAddon) => {
+    const cfg = getProviderConfig(provider)
+    const testPath = cfg.test_post || cfg.test_get || cfg.status_get
+    if (!testPath) return
+    setProviderTesting(prev => ({ ...prev, [provider.id]: true }))
+    try {
+      const payload = buildProviderPayload(provider)
+      const res = cfg.test_post ? await apiClient.post(testPath, payload) : await apiClient.get(testPath)
+      const ok = !!res.data?.connected
+      setProviderConnected(prev => ({ ...prev, [provider.id]: ok }))
+      if (ok) {
+        toast.success(`${provider.name} connected`)
       } else {
-        toast.error(`${t('memories.connectionError')}: ${res.data.error}`)
-        setImmichTestPassed(false)
+        toast.error(`${provider.name} connection failed${res.data?.error ? `: ${String(res.data.error)}` : ''}`)
       }
     } catch {
-      toast.error(t('memories.connectionError'))
+      toast.error(`${provider.name} connection failed`)
     } finally {
-      setImmichTesting(false)
+      setProviderTesting(prev => ({ ...prev, [provider.id]: false }))
     }
   }
 
@@ -249,6 +352,62 @@ export default function SettingsPage(): React.ReactElement {
     }
   }
 }`
+
+  const renderPhotoProviderSection = (provider: PhotoProviderAddon): React.ReactElement => {
+    const fields = getProviderFields(provider)
+    const cfg = getProviderConfig(provider)
+    const values = providerValues[provider.id] || {}
+    const connected = !!providerConnected[provider.id]
+    const testing = !!providerTesting[provider.id]
+    const canSave = !!cfg.settings_put
+    const canTest = !!(cfg.test_post || cfg.test_get || cfg.status_get)
+
+    return (
+      <Section key={provider.id} title={provider.name || provider.id} icon={Camera}>
+        <div className="space-y-3">
+          {fields.map(field => (
+            <div key={`${provider.id}-${field.key}`}>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">{field.label}</label>
+              <input
+                type={field.input_type || 'text'}
+                value={values[field.key] || ''}
+                onChange={e => handleProviderFieldChange(provider.id, field.key, e.target.value)}
+                placeholder={field.secret && connected && !(values[field.key] || '') ? '••••••••' : (field.placeholder || '')}
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              />
+            </div>
+          ))}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => handleSaveProvider(provider)}
+              disabled={!canSave || !!saving[provider.id] || isProviderSaveDisabled(provider)}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-700 disabled:bg-slate-400"
+              title={!canSave ? 'Save route is not configured for this provider' : isProviderSaveDisabled(provider) ? 'Please fill all required fields' : ''}
+            >
+              <Save className="w-4 h-4" /> {t('common.save')}
+            </button>
+            <button
+              onClick={() => handleTestProvider(provider)}
+              disabled={!canTest || testing}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"
+              title={!canTest ? 'Test route is not configured for this provider' : ''}
+            >
+              {testing
+                ? <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
+                : <Camera className="w-4 h-4" />}
+              {t('memories.testConnection')}
+            </button>
+            {connected && (
+              <span className="text-xs font-medium text-green-600 flex items-center gap-1">
+                <span className="w-2 h-2 bg-green-500 rounded-full" />
+                {t('memories.connected')}
+              </span>
+            )}
+          </div>
+        </div>
+      </Section>
+    )
+  }
 
   // Map settings
   const [mapTileUrl, setMapTileUrl] = useState<string>(settings.map_tile_url || '')
@@ -732,45 +891,7 @@ export default function SettingsPage(): React.ReactElement {
             <NotificationPreferences t={t} memoriesEnabled={memoriesEnabled} />
           </Section>
 
-          {/* Immich — only when Memories addon is enabled */}
-          {memoriesEnabled && (
-            <Section title="Immich" icon={Camera}>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">{t('memories.immichUrl')}</label>
-                  <input type="url" value={immichUrl} onChange={e => { setImmichUrl(e.target.value); setImmichTestPassed(false) }}
-                    placeholder="https://immich.example.com"
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">{t('memories.immichApiKey')}</label>
-                  <input type="password" value={immichApiKey} onChange={e => { setImmichApiKey(e.target.value); setImmichTestPassed(false) }}
-                    placeholder={immichConnected ? '••••••••' : 'API Key'}
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <button onClick={handleSaveImmich} disabled={saving.immich || !immichTestPassed}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-700 disabled:bg-slate-400"
-                    title={!immichTestPassed ? t('memories.testFirst') : ''}>
-                    <Save className="w-4 h-4" /> {t('common.save')}
-                  </button>
-                  <button onClick={handleTestImmich} disabled={immichTesting}
-                    className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50">
-                    {immichTesting
-                      ? <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
-                      : <Camera className="w-4 h-4" />}
-                    {t('memories.testConnection')}
-                  </button>
-                  {immichConnected && (
-                    <span className="text-xs font-medium text-green-600 flex items-center gap-1">
-                      <span className="w-2 h-2 bg-green-500 rounded-full" />
-                      {t('memories.connected')}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </Section>
-          )}
+          {activePhotoProviders.map(provider => renderPhotoProviderSection(provider as PhotoProviderAddon))}
 
           {/* MCP Configuration — only when MCP addon is enabled */}
           {mcpEnabled && <Section title={t('settings.mcp.title')} icon={Terminal}>

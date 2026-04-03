@@ -92,6 +92,51 @@ function seedAddons(db: Database.Database): void {
     ];
     const insertAddon = db.prepare('INSERT OR IGNORE INTO addons (id, name, description, type, icon, enabled, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const a of defaultAddons) insertAddon.run(a.id, a.name, a.description, a.type, a.icon, a.enabled, a.sort_order);
+
+    const providerRows = [
+      {
+        id: 'immich',
+        name: 'Immich',
+        description: 'Immich photo provider',
+        icon: 'Image',
+        enabled: 0,
+        sort_order: 0,
+        config: JSON.stringify({
+          settings_get: '/integrations/immich/settings',
+          settings_put: '/integrations/immich/settings',
+          status_get: '/integrations/immich/status',
+          test_post: '/integrations/immich/test',
+        }),
+      },
+      {
+        id: 'synologyphotos',
+        name: 'Synology Photos',
+        description: 'Synology Photos integration with separate account settings',
+        icon: 'Image',
+        enabled: 0,
+        sort_order: 1,
+        config: JSON.stringify({
+          settings_get: '/integrations/synologyphotos/settings',
+          settings_put: '/integrations/synologyphotos/settings',
+          status_get: '/integrations/synologyphotos/status',
+          test_post: '/integrations/synologyphotos/test',
+        }),
+      },
+    ];
+    const insertProvider = db.prepare('INSERT OR IGNORE INTO photo_providers (id, name, description, icon, enabled, config, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const p of providerRows) insertProvider.run(p.id, p.name, p.description, p.icon, p.enabled, p.config, p.sort_order);
+
+    const providerFields = [
+      { provider_id: 'immich', field_key: 'immich_url', label: 'Immich URL', input_type: 'url', placeholder: 'https://immich.example.com', required: 1, secret: 0, settings_key: 'immich_url', payload_key: 'immich_url', sort_order: 0 },
+      { provider_id: 'immich', field_key: 'immich_api_key', label: 'API Key', input_type: 'password', placeholder: 'API Key', required: 1, secret: 1, settings_key: null, payload_key: 'immich_api_key', sort_order: 1 },
+      { provider_id: 'synologyphotos', field_key: 'synology_url', label: 'Server URL', input_type: 'url', placeholder: 'https://synology.example.com', required: 1, secret: 0, settings_key: 'synology_url', payload_key: 'synology_url', sort_order: 0 },
+      { provider_id: 'synologyphotos', field_key: 'synology_username', label: 'Username', input_type: 'text', placeholder: 'Username', required: 1, secret: 0, settings_key: 'synology_username', payload_key: 'synology_username', sort_order: 1 },
+      { provider_id: 'synologyphotos', field_key: 'synology_password', label: 'Password', input_type: 'password', placeholder: 'Password', required: 1, secret: 1, settings_key: null, payload_key: 'synology_password', sort_order: 2 },
+    ];
+    const insertProviderField = db.prepare('INSERT OR IGNORE INTO photo_provider_fields (provider_id, field_key, label, input_type, placeholder, required, secret, settings_key, payload_key, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    for (const f of providerFields) {
+      insertProviderField.run(f.provider_id, f.field_key, f.label, f.input_type, f.placeholder, f.required, f.secret, f.settings_key, f.payload_key, f.sort_order);
+    }
     console.log('Default addons seeded');
   } catch (err: unknown) {
     console.error('Error seeding addons:', err instanceof Error ? err.message : err);

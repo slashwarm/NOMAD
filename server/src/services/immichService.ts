@@ -175,11 +175,12 @@ export async function searchPhotos(
 
 export function listTripPhotos(tripId: string, userId: number) {
   return db.prepare(`
-    SELECT tp.immich_asset_id, tp.user_id, tp.shared, tp.added_at,
+    SELECT tp.asset_id AS immich_asset_id, tp.user_id, tp.shared, tp.added_at,
            u.username, u.avatar, u.immich_url
     FROM trip_photos tp
     JOIN users u ON tp.user_id = u.id
     WHERE tp.trip_id = ?
+    AND tp.provider = 'immich'
     AND (tp.user_id = ? OR tp.shared = 1)
     ORDER BY tp.added_at ASC
   `).all(tripId, userId);
@@ -191,25 +192,23 @@ export function addTripPhotos(
   assetIds: string[],
   shared: boolean
 ): number {
-  const insert = db.prepare(
-    'INSERT OR IGNORE INTO trip_photos (trip_id, user_id, immich_asset_id, shared) VALUES (?, ?, ?, ?)'
-  );
+  const insert = db.prepare('INSERT OR IGNORE INTO trip_photos (trip_id, user_id, asset_id, provider, shared) VALUES (?, ?, ?, ?, ?)');
   let added = 0;
   for (const assetId of assetIds) {
-    const result = insert.run(tripId, userId, assetId, shared ? 1 : 0);
+    const result = insert.run(tripId, userId, assetId, 'immich', shared ? 1 : 0);
     if (result.changes > 0) added++;
   }
   return added;
 }
 
 export function removeTripPhoto(tripId: string, userId: number, assetId: string) {
-  db.prepare('DELETE FROM trip_photos WHERE trip_id = ? AND user_id = ? AND immich_asset_id = ?')
-    .run(tripId, userId, assetId);
+  db.prepare('DELETE FROM trip_photos WHERE trip_id = ? AND user_id = ? AND asset_id = ? AND provider = ?')
+    .run(tripId, userId, assetId, 'immich');
 }
 
 export function togglePhotoSharing(tripId: string, userId: number, assetId: string, shared: boolean) {
-  db.prepare('UPDATE trip_photos SET shared = ? WHERE trip_id = ? AND user_id = ? AND immich_asset_id = ?')
-    .run(shared ? 1 : 0, tripId, userId, assetId);
+  db.prepare('UPDATE trip_photos SET shared = ? WHERE trip_id = ? AND user_id = ? AND asset_id = ? AND provider = ?')
+    .run(shared ? 1 : 0, tripId, userId, assetId, 'immich');
 }
 
 // ── Asset Info / Proxy ─────────────────────────────────────────────────────
@@ -329,7 +328,7 @@ export function listAlbumLinks(tripId: string) {
     SELECT tal.*, u.username
     FROM trip_album_links tal
     JOIN users u ON tal.user_id = u.id
-    WHERE tal.trip_id = ?
+    WHERE tal.trip_id = ? AND tal.provider = 'immich'
     ORDER BY tal.created_at ASC
   `).all(tripId);
 }
@@ -342,8 +341,8 @@ export function createAlbumLink(
 ): { success: boolean; error?: string } {
   try {
     db.prepare(
-      'INSERT OR IGNORE INTO trip_album_links (trip_id, user_id, immich_album_id, album_name) VALUES (?, ?, ?, ?)'
-    ).run(tripId, userId, albumId, albumName || '');
+      'INSERT OR IGNORE INTO trip_album_links (trip_id, user_id, provider, album_id, album_name) VALUES (?, ?, ?, ?, ?)'
+    ).run(tripId, userId, 'immich', albumId, albumName || '');
     return { success: true };
   } catch {
     return { success: false, error: 'Album already linked' };
@@ -360,15 +359,15 @@ export async function syncAlbumAssets(
   linkId: string,
   userId: number
 ): Promise<{ success?: boolean; added?: number; total?: number; error?: string; status?: number }> {
-  const link = db.prepare('SELECT * FROM trip_album_links WHERE id = ? AND trip_id = ? AND user_id = ?')
-    .get(linkId, tripId, userId) as any;
+  const link = db.prepare('SELECT * FROM trip_album_links WHERE id = ? AND trip_id = ? AND user_id = ? AND provider = ?')
+    .get(linkId, tripId, userId, 'immich') as any;
   if (!link) return { error: 'Album link not found', status: 404 };
 
   const creds = getImmichCredentials(userId);
   if (!creds) return { error: 'Immich not configured', status: 400 };
 
   try {
-    const resp = await fetch(`${creds.immich_url}/api/albums/${link.immich_album_id}`, {
+    const resp = await fetch(`${creds.immich_url}/api/albums/${link.album_id}`, {
       headers: { 'x-api-key': creds.immich_api_key, 'Accept': 'application/json' },
       signal: AbortSignal.timeout(15000),
     });
@@ -376,9 +375,7 @@ export async function syncAlbumAssets(
     const albumData = await resp.json() as { assets?: any[] };
     const assets = (albumData.assets || []).filter((a: any) => a.type === 'IMAGE');
 
-    const insert = db.prepare(
-      'INSERT OR IGNORE INTO trip_photos (trip_id, user_id, immich_asset_id, shared) VALUES (?, ?, ?, 1)'
-    );
+    const insert = db.prepare("INSERT OR IGNORE INTO trip_photos (trip_id, user_id, asset_id, provider, shared) VALUES (?, ?, ?, 'immich', 1)");
     let added = 0;
     for (const asset of assets) {
       const r = insert.run(tripId, userId, asset.id);

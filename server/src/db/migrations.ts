@@ -518,6 +518,179 @@ function runMigrations(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_notifications_recipient_created ON notifications(recipient_id, created_at DESC);
       `);
     },
+    () => {
+      // Normalize trip_photos to provider-based schema used by current routes
+      const tripPhotosExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trip_photos'").get();
+      if (!tripPhotosExists) {
+        db.exec(`
+          CREATE TABLE trip_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            asset_id TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT 'immich',
+            shared INTEGER NOT NULL DEFAULT 1,
+            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(trip_id, user_id, asset_id, provider)
+          );
+          CREATE INDEX IF NOT EXISTS idx_trip_photos_trip ON trip_photos(trip_id);
+        `);
+      } else {
+        const columns = db.prepare("PRAGMA table_info('trip_photos')").all() as Array<{ name: string }>;
+        const names = new Set(columns.map(c => c.name));
+        const assetSource = names.has('asset_id') ? 'asset_id' : (names.has('immich_asset_id') ? 'immich_asset_id' : null);
+        if (assetSource) {
+          const providerExpr = names.has('provider')
+            ? "CASE WHEN provider IS NULL OR provider = '' THEN 'immich' ELSE provider END"
+            : "'immich'";
+          const sharedExpr = names.has('shared') ? 'COALESCE(shared, 1)' : '1';
+          const addedAtExpr = names.has('added_at') ? 'COALESCE(added_at, CURRENT_TIMESTAMP)' : 'CURRENT_TIMESTAMP';
+
+          db.exec(`
+            CREATE TABLE trip_photos_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+              user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              asset_id TEXT NOT NULL,
+              provider TEXT NOT NULL DEFAULT 'immich',
+              shared INTEGER NOT NULL DEFAULT 1,
+              added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(trip_id, user_id, asset_id, provider)
+            );
+          `);
+
+          db.exec(`
+            INSERT OR IGNORE INTO trip_photos_new (trip_id, user_id, asset_id, provider, shared, added_at)
+            SELECT trip_id, user_id, ${assetSource}, ${providerExpr}, ${sharedExpr}, ${addedAtExpr}
+            FROM trip_photos
+            WHERE ${assetSource} IS NOT NULL AND TRIM(${assetSource}) != ''
+          `);
+
+          db.exec('DROP TABLE trip_photos');
+          db.exec('ALTER TABLE trip_photos_new RENAME TO trip_photos');
+          db.exec('CREATE INDEX IF NOT EXISTS idx_trip_photos_trip ON trip_photos(trip_id)');
+        }
+      }
+    },
+    () => {
+      // Normalize trip_album_links to provider + album_id schema used by current routes
+      const linksExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trip_album_links'").get();
+      if (!linksExists) {
+        db.exec(`
+          CREATE TABLE trip_album_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            provider TEXT NOT NULL,
+            album_id TEXT NOT NULL,
+            album_name TEXT NOT NULL DEFAULT '',
+            sync_enabled INTEGER NOT NULL DEFAULT 1,
+            last_synced_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(trip_id, user_id, provider, album_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_trip_album_links_trip ON trip_album_links(trip_id);
+        `);
+      } else {
+        const columns = db.prepare("PRAGMA table_info('trip_album_links')").all() as Array<{ name: string }>;
+        const names = new Set(columns.map(c => c.name));
+        const albumIdSource = names.has('album_id') ? 'album_id' : (names.has('immich_album_id') ? 'immich_album_id' : null);
+        if (albumIdSource) {
+          const providerExpr = names.has('provider')
+            ? "CASE WHEN provider IS NULL OR provider = '' THEN 'immich' ELSE provider END"
+            : "'immich'";
+          const albumNameExpr = names.has('album_name') ? "COALESCE(album_name, '')" : "''";
+          const syncEnabledExpr = names.has('sync_enabled') ? 'COALESCE(sync_enabled, 1)' : '1';
+          const lastSyncedExpr = names.has('last_synced_at') ? 'last_synced_at' : 'NULL';
+          const createdAtExpr = names.has('created_at') ? 'COALESCE(created_at, CURRENT_TIMESTAMP)' : 'CURRENT_TIMESTAMP';
+
+          db.exec(`
+            CREATE TABLE trip_album_links_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+              user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              provider TEXT NOT NULL,
+              album_id TEXT NOT NULL,
+              album_name TEXT NOT NULL DEFAULT '',
+              sync_enabled INTEGER NOT NULL DEFAULT 1,
+              last_synced_at DATETIME,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE(trip_id, user_id, provider, album_id)
+            );
+          `);
+
+          db.exec(`
+            INSERT OR IGNORE INTO trip_album_links_new (trip_id, user_id, provider, album_id, album_name, sync_enabled, last_synced_at, created_at)
+            SELECT trip_id, user_id, ${providerExpr}, ${albumIdSource}, ${albumNameExpr}, ${syncEnabledExpr}, ${lastSyncedExpr}, ${createdAtExpr}
+            FROM trip_album_links
+            WHERE ${albumIdSource} IS NOT NULL AND TRIM(${albumIdSource}) != ''
+          `);
+
+          db.exec('DROP TABLE trip_album_links');
+          db.exec('ALTER TABLE trip_album_links_new RENAME TO trip_album_links');
+          db.exec('CREATE INDEX IF NOT EXISTS idx_trip_album_links_trip ON trip_album_links(trip_id)');
+        }
+      }
+    },
+    () => {
+      // Add Synology credential columns for existing databases
+      try { db.exec('ALTER TABLE users ADD COLUMN synology_url TEXT'); } catch (err: any) { if (!err.message?.includes('duplicate column name')) throw err; }
+      try { db.exec('ALTER TABLE users ADD COLUMN synology_username TEXT'); } catch (err: any) { if (!err.message?.includes('duplicate column name')) throw err; }
+      try { db.exec('ALTER TABLE users ADD COLUMN synology_password TEXT'); } catch (err: any) { if (!err.message?.includes('duplicate column name')) throw err; }
+      try { db.exec('ALTER TABLE users ADD COLUMN synology_sid TEXT'); } catch (err: any) { if (!err.message?.includes('duplicate column name')) throw err; }
+    },
+    () => {
+      // Seed Synology Photos provider and fields in existing databases
+      try {
+        db.prepare(`
+          INSERT INTO photo_providers (id, name, description, icon, enabled, config, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            description = excluded.description,
+            icon = excluded.icon,
+            enabled = excluded.enabled,
+            config = excluded.config,
+            sort_order = excluded.sort_order
+        `).run(
+          'synologyphotos',
+          'Synology Photos',
+          'Synology Photos integration with separate account settings',
+          'Image',
+          0,
+          JSON.stringify({
+            settings_get: '/integrations/synologyphotos/settings',
+            settings_put: '/integrations/synologyphotos/settings',
+            status_get: '/integrations/synologyphotos/status',
+            test_post: '/integrations/synologyphotos/test',
+          }),
+          1,
+        );
+      } catch (err: any) {
+        if (!err.message?.includes('no such table')) throw err;
+      }
+      try {
+        const insertField = db.prepare(`
+          INSERT INTO photo_provider_fields
+          (provider_id, field_key, label, input_type, placeholder, required, secret, settings_key, payload_key, sort_order)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(provider_id, field_key) DO UPDATE SET
+            label = excluded.label,
+            input_type = excluded.input_type,
+            placeholder = excluded.placeholder,
+            required = excluded.required,
+            secret = excluded.secret,
+            settings_key = excluded.settings_key,
+            payload_key = excluded.payload_key,
+            sort_order = excluded.sort_order
+        `);
+        insertField.run('synologyphotos', 'synology_url', 'Server URL', 'url', 'https://synology.example.com', 1, 0, 'synology_url', 'synology_url', 0);
+        insertField.run('synologyphotos', 'synology_username', 'Username', 'text', 'Username', 1, 0, 'synology_username', 'synology_username', 1);
+        insertField.run('synologyphotos', 'synology_password', 'Password', 'password', 'Password', 1, 1, null, 'synology_password', 2);
+      } catch (err: any) {
+        if (!err.message?.includes('no such table')) throw err;
+      }
+    },
   ];
 
   if (currentVersion < migrations.length) {

@@ -981,7 +981,7 @@ export function createWsToken(userId: number): { error?: string; status?: number
 }
 
 export function createResourceToken(userId: number, purpose?: string): { error?: string; status?: number; token?: string } {
-  if (purpose !== 'download' && purpose !== 'immich') {
+  if (purpose !== 'download' && purpose !== 'immich' && purpose !== 'synologyphotos') {
     return { error: 'Invalid purpose', status: 400 };
   }
   const token = createEphemeralToken(userId, purpose);
