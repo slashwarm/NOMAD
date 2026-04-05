@@ -127,6 +127,12 @@ const hu: Record<string, string | { name: string; category: string }[]> = {
   // Beállítások
   'settings.title': 'Beállítások',
   'settings.subtitle': 'Személyes beállítások konfigurálása',
+  'settings.tabs.display': 'Megjelenés',
+  'settings.tabs.map': 'Térkép',
+  'settings.tabs.notifications': 'Értesítések',
+  'settings.tabs.integrations': 'Integrációk',
+  'settings.tabs.account': 'Fiók',
+  'settings.tabs.about': 'Névjegy',
   'settings.map': 'Térkép',
   'settings.mapTemplate': 'Térkép sablon',
   'settings.mapTemplatePlaceholder.select': 'Sablon kiválasztása...',

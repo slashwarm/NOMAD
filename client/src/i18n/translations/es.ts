@@ -128,6 +128,12 @@ const es: Record<string, string> = {
   // Settings
   'settings.title': 'Ajustes',
   'settings.subtitle': 'Configura tus ajustes personales',
+  'settings.tabs.display': 'Pantalla',
+  'settings.tabs.map': 'Mapa',
+  'settings.tabs.notifications': 'Notificaciones',
+  'settings.tabs.integrations': 'Integraciones',
+  'settings.tabs.account': 'Cuenta',
+  'settings.tabs.about': 'Acerca de',
   'settings.map': 'Mapa',
   'settings.mapTemplate': 'Plantilla del mapa',
   'settings.mapTemplatePlaceholder.select': 'Seleccionar plantilla...',

@@ -127,6 +127,12 @@ const it: Record<string, string | { name: string; category: string }[]> = {
   // Settings
   'settings.title': 'Impostazioni',
   'settings.subtitle': 'Configura le tue impostazioni personali',
+  'settings.tabs.display': 'Visualizzazione',
+  'settings.tabs.map': 'Mappa',
+  'settings.tabs.notifications': 'Notifiche',
+  'settings.tabs.integrations': 'Integrazioni',
+  'settings.tabs.account': 'Account',
+  'settings.tabs.about': 'Informazioni',
   'settings.map': 'Mappa',
   'settings.mapTemplate': 'Modello Mappa',
   'settings.mapTemplatePlaceholder.select': 'Seleziona modello...',

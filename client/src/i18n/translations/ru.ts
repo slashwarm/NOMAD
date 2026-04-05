@@ -127,6 +127,12 @@ const ru: Record<string, string> = {
   // Settings
   'settings.title': 'Настройки',
   'settings.subtitle': 'Настройте свои персональные параметры',
+  'settings.tabs.display': 'Дисплей',
+  'settings.tabs.map': 'Карта',
+  'settings.tabs.notifications': 'Уведомления',
+  'settings.tabs.integrations': 'Интеграции',
+  'settings.tabs.account': 'Аккаунт',
+  'settings.tabs.about': 'О приложении',
   'settings.map': 'Карта',
   'settings.mapTemplate': 'Шаблон карты',
   'settings.mapTemplatePlaceholder.select': 'Выберите шаблон...',

@@ -127,6 +127,12 @@ const zh: Record<string, string> = {
   // Settings
   'settings.title': '设置',
   'settings.subtitle': '配置你的个人设置',
+  'settings.tabs.display': '显示',
+  'settings.tabs.map': '地图',
+  'settings.tabs.notifications': '通知',
+  'settings.tabs.integrations': '集成',
+  'settings.tabs.account': '账户',
+  'settings.tabs.about': '关于',
   'settings.map': '地图',
   'settings.mapTemplate': '地图模板',
   'settings.mapTemplatePlaceholder.select': '选择模板...',

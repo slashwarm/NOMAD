@@ -127,6 +127,12 @@ const nl: Record<string, string> = {
   // Settings
   'settings.title': 'Instellingen',
   'settings.subtitle': 'Configureer je persoonlijke instellingen',
+  'settings.tabs.display': 'Weergave',
+  'settings.tabs.map': 'Kaart',
+  'settings.tabs.notifications': 'Meldingen',
+  'settings.tabs.integrations': 'Integraties',
+  'settings.tabs.account': 'Account',
+  'settings.tabs.about': 'Over',
   'settings.map': 'Kaart',
   'settings.mapTemplate': 'Kaartsjabloon',
   'settings.mapTemplatePlaceholder.select': 'Selecteer sjabloon...',

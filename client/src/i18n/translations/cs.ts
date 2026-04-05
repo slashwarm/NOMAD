@@ -128,6 +128,12 @@ const cs: Record<string, string | { name: string; category: string }[]> = {
   // Nastavení (Settings)
   'settings.title': 'Nastavení',
   'settings.subtitle': 'Upravte své osobní nastavení',
+  'settings.tabs.display': 'Zobrazení',
+  'settings.tabs.map': 'Mapa',
+  'settings.tabs.notifications': 'Oznámení',
+  'settings.tabs.integrations': 'Integrace',
+  'settings.tabs.account': 'Účet',
+  'settings.tabs.about': 'O aplikaci',
   'settings.map': 'Mapy',
   'settings.mapTemplate': 'Šablona mapy',
   'settings.mapTemplatePlaceholder.select': 'Vyberte šablonu...',

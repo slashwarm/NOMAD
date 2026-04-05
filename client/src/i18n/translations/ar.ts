@@ -132,6 +132,12 @@ const ar: Record<string, string | { name: string; category: string }[]> = {
   // Settings
   'settings.title': 'الإعدادات',
   'settings.subtitle': 'ضبط إعداداتك الشخصية',
+  'settings.tabs.display': 'العرض',
+  'settings.tabs.map': 'الخريطة',
+  'settings.tabs.notifications': 'الإشعارات',
+  'settings.tabs.integrations': 'التكاملات',
+  'settings.tabs.account': 'الحساب',
+  'settings.tabs.about': 'حول',
   'settings.map': 'الخريطة',
   'settings.mapTemplate': 'قالب الخريطة',
   'settings.mapTemplatePlaceholder.select': 'اختر قالبًا...',

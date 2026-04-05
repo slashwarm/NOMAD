@@ -113,6 +113,12 @@ const pl: Record<string, string | { name: string; category: string }[]> = {
   // Settings
   'settings.title': 'Ustawienia',
   'settings.subtitle': 'Skonfiguruj swoje ustawienia',
+  'settings.tabs.display': 'Wygląd',
+  'settings.tabs.map': 'Mapa',
+  'settings.tabs.notifications': 'Powiadomienia',
+  'settings.tabs.integrations': 'Integracje',
+  'settings.tabs.account': 'Konto',
+  'settings.tabs.about': 'O aplikacji',
   'settings.map': 'Mapa',
   'settings.mapTemplate': 'Szablon mapy',
   'settings.mapTemplatePlaceholder.select': 'Wybierz szablon...',
