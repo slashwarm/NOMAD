@@ -14,6 +14,14 @@ import { useTripStore } from '../../store/tripStore'
 import { useCanDo } from '../../store/permissionsStore'
 import type { Place, Category, Day, AssignmentsMap } from '../../types'
 
+interface PlacesImportSummary {
+  totalPlacemarks: number
+  createdCount: number
+  skippedCount: number
+  warnings: string[]
+  errors: string[]
+}
+
 interface PlacesSidebarProps {
   tripId: number
   places: Place[]
@@ -44,6 +52,7 @@ const PlacesSidebar = React.memo(function PlacesSidebar({
   const loadTrip = useTripStore((s) => s.loadTrip)
   const can = useCanDo()
   const canEditPlaces = can('place_edit', trip)
+  const importFileLimitBytes = 10 * 1024 * 1024
 
   const handleGpxImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -70,6 +79,70 @@ const PlacesSidebar = React.memo(function PlacesSidebar({
   const [googleListOpen, setGoogleListOpen] = useState(false)
   const [googleListUrl, setGoogleListUrl] = useState('')
   const [googleListLoading, setGoogleListLoading] = useState(false)
+  const [kmlKmzOpen, setKmlKmzOpen] = useState(false)
+  const [kmlKmzLoading, setKmlKmzLoading] = useState(false)
+  const [kmlKmzFile, setKmlKmzFile] = useState<File | null>(null)
+  const [kmlKmzSummary, setKmlKmzSummary] = useState<PlacesImportSummary | null>(null)
+  const [kmlKmzError, setKmlKmzError] = useState('')
+
+  const resetKmlKmzDialog = () => {
+    setKmlKmzFile(null)
+    setKmlKmzSummary(null)
+    setKmlKmzError('')
+    setKmlKmzLoading(false)
+  }
+
+  const handleKmlKmzImport = async () => {
+    if (!kmlKmzFile) return
+
+    const ext = kmlKmzFile.name.toLowerCase().split('.').pop()
+    if (ext !== 'kml' && ext !== 'kmz') {
+      setKmlKmzError(t('places.kmlKmzInvalidType'))
+      return
+    }
+    if (kmlKmzFile.size > importFileLimitBytes) {
+      setKmlKmzError(t('places.kmlKmzTooLarge', { maxMb: 10 }))
+      return
+    }
+
+    setKmlKmzLoading(true)
+    setKmlKmzError('')
+    setKmlKmzSummary(null)
+
+    try {
+      const result = ext === 'kmz'
+        ? await placesApi.importKmz(tripId, kmlKmzFile)
+        : await placesApi.importKml(tripId, kmlKmzFile)
+
+      await loadTrip(tripId)
+      setKmlKmzSummary(result.summary || null)
+      toast.success(t('places.kmlKmzImported', { count: result.count }))
+
+      if (result.summary?.errors?.length > 0) {
+        setKmlKmzError(result.summary.errors.join('\n'))
+      }
+
+      if (result.places?.length > 0) {
+        const importedIds: number[] = result.places.map((p: { id: number }) => p.id)
+        pushUndo?.(t('undo.importKmlKmz'), async () => {
+          for (const id of importedIds) {
+            try { await placesApi.delete(tripId, id) } catch {}
+          }
+          await loadTrip(tripId)
+        })
+      }
+    } catch (err: any) {
+      const responseSummary = err?.response?.data?.summary as PlacesImportSummary | undefined
+      if (responseSummary) {
+        setKmlKmzSummary(responseSummary)
+      }
+      const message = err?.response?.data?.error || t('places.kmlKmzImportError')
+      setKmlKmzError(message)
+      toast.error(message)
+    } finally {
+      setKmlKmzLoading(false)
+    }
+  }
 
   const handleGoogleListImport = async () => {
     if (!googleListUrl.trim()) return
@@ -158,6 +231,18 @@ const PlacesSidebar = React.memo(function PlacesSidebar({
             }}
           >
             <Upload size={11} strokeWidth={2} /> {t('places.importGpx')}
+          </button>
+          <button
+            onClick={() => { resetKmlKmzDialog(); setKmlKmzOpen(true) }}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              flex: 1, padding: '5px 12px', borderRadius: 8,
+              border: '1px dashed var(--border-primary)', background: 'none',
+              color: 'var(--text-faint)', fontSize: 11, fontWeight: 500,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            <Upload size={11} strokeWidth={2} /> {t('places.importKmlKmz')}
           </button>
           <button
             onClick={() => setGoogleListOpen(true)}
@@ -499,6 +584,109 @@ const PlacesSidebar = React.memo(function PlacesSidebar({
                 }}
               >
                 {googleListLoading ? t('common.loading') : t('common.import')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {kmlKmzOpen && ReactDOM.createPortal(
+        <div
+          onClick={() => { setKmlKmzOpen(false); resetKmlKmzDialog() }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-card)', borderRadius: 16, width: '100%', maxWidth: 520, padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+              {t('places.importKmlKmz')}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>
+              {t('places.kmlKmzHint')}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 14 }}>
+              {t('places.kmlKmzSizeHint', { maxMb: 10 })}
+            </div>
+
+            <input
+              type="file"
+              accept=".kml,.kmz"
+              onChange={e => {
+                const file = e.target.files?.[0] || null
+                setKmlKmzFile(file)
+                setKmlKmzSummary(null)
+                setKmlKmzError('')
+              }}
+              style={{
+                width: '100%', padding: '8px 10px', borderRadius: 10,
+                border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)',
+                fontSize: 12, color: 'var(--text-primary)', boxSizing: 'border-box', marginBottom: 12,
+              }}
+            />
+
+            {kmlKmzFile && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                {t('places.kmlKmzSelectedFile', { name: kmlKmzFile.name })}
+              </div>
+            )}
+
+            {kmlKmzSummary && (
+              <div style={{
+                border: '1px solid var(--border-primary)', borderRadius: 10,
+                background: 'var(--bg-tertiary)', padding: 10, marginBottom: 10,
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  {t('places.kmlKmzSummaryTitle')}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {t('places.kmlKmzSummaryValues', {
+                    total: kmlKmzSummary.totalPlacemarks,
+                    created: kmlKmzSummary.createdCount,
+                    skipped: kmlKmzSummary.skippedCount,
+                  })}
+                </div>
+                {kmlKmzSummary.warnings?.length > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#b45309', whiteSpace: 'pre-wrap' }}>
+                    {kmlKmzSummary.warnings.join('\n')}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {kmlKmzError && (
+              <div style={{
+                border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10,
+                background: 'rgba(239,68,68,0.08)', padding: '8px 10px',
+                fontSize: 12, color: '#b91c1c', whiteSpace: 'pre-wrap', marginBottom: 10,
+              }}>
+                {kmlKmzError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setKmlKmzOpen(false); resetKmlKmzDialog() }}
+                style={{
+                  padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border-primary)',
+                  background: 'none', color: 'var(--text-primary)', fontSize: 13, fontWeight: 500,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleKmlKmzImport}
+                disabled={!kmlKmzFile || kmlKmzLoading}
+                style={{
+                  padding: '8px 16px', borderRadius: 10, border: 'none',
+                  background: !kmlKmzFile || kmlKmzLoading ? 'var(--bg-tertiary)' : 'var(--accent)',
+                  color: !kmlKmzFile || kmlKmzLoading ? 'var(--text-faint)' : 'var(--accent-text)',
+                  fontSize: 13, fontWeight: 500, cursor: !kmlKmzFile || kmlKmzLoading ? 'default' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {kmlKmzLoading ? t('common.loading') : t('common.import')}
               </button>
             </div>
           </div>

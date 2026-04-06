@@ -105,6 +105,14 @@ export const placesApi = {
     const fd = new FormData(); fd.append('file', file)
     return apiClient.post(`/trips/${tripId}/places/import/gpx`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
   },
+  importKml: (tripId: number | string, file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+    return apiClient.post(`/trips/${tripId}/places/import/kml`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
+  },
+  importKmz: (tripId: number | string, file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+    return apiClient.post(`/trips/${tripId}/places/import/kmz`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
+  },
   importGoogleList: (tripId: number | string, url: string) =>
     apiClient.post(`/trips/${tripId}/places/import/google-list`, { url }).then(r => r.data),
 }
