@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useSettingsStore } from '../store/settingsStore'
-import { SUPPORTED_LANGUAGES, useTranslation, detectBrowserLanguage } from '../i18n'
+import { SUPPORTED_LANGUAGES, useTranslation, detectBrowserLanguage } from '../i18n/TranslationContext'
 import { authApi, configApi } from '../api/client'
 import { getApiErrorMessage } from '../types'
 import { Plane, Eye, EyeOff, Mail, Lock, MapPin, Calendar, Package, User, Globe, Zap, Users, Wallet, Map, CheckSquare, BookMarked, FolderOpen, Route, Shield, KeyRound, ChevronDown } from 'lucide-react'
@@ -134,7 +134,7 @@ export default function LoginPage(): React.ReactElement {
 
     configApi.getPublicConfig()
       .then(({ defaultLanguage }) => { if (defaultLanguage) setLanguageTransient(defaultLanguage) })
-      .catch(() => {})
+      .catch((err) => console.warn('Failed to fetch default language config:', err))
   }, [setLanguageTransient])
 
   useEffect(() => {

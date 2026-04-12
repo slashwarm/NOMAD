@@ -54,19 +54,24 @@ export function isRtlLanguage(language: string): boolean {
 // Detects the user's preferred language from the browser/OS settings and maps
 // it to one of the supported language codes. Returns null if no match is found.
 export function detectBrowserLanguage(): string | null {
-  const browserLangs = navigator.languages?.length ? navigator.languages : [navigator.language]
+  if (typeof navigator === 'undefined') return null
+  const browserLangs = navigator.languages?.length
+    ? navigator.languages
+    : navigator.language ? [navigator.language] : []
   const supported = SUPPORTED_LANGUAGES.map(l => l.value)
 
   for (const lang of browserLangs) {
-    // Exact match (e.g. 'de', 'zh-TW')
-    if (supported.includes(lang)) return lang
+    // Exact match (e.g. 'de', 'zh-TW') — case-insensitive
+    const exactMatch = supported.find(s => s.toLowerCase() === lang.toLowerCase())
+    if (exactMatch) return exactMatch
 
     // Portuguese variants → our code is 'br' (pt-BR)
-    if (lang.startsWith('pt')) return 'br'
+    if (lang.toLowerCase().startsWith('pt')) return 'br'
 
-    // Prefix match (e.g. 'de-AT' → 'de', 'zh-CN' → 'zh')
-    const prefix = lang.split('-')[0]
-    if (supported.includes(prefix)) return prefix
+    // Prefix match (e.g. 'de-AT' → 'de', 'zh-CN' → 'zh') — case-insensitive
+    const prefix = lang.split('-')[0].toLowerCase()
+    const prefixMatch = supported.find(s => s.toLowerCase() === prefix)
+    if (prefixMatch) return prefixMatch
   }
 
   return null

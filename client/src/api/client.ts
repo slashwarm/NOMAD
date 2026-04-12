@@ -380,7 +380,7 @@ export const weatherApi = {
 
 export const configApi = {
   getPublicConfig: (): Promise<{ defaultLanguage: string }> =>
-    fetch('/api/config').then(r => r.json()),
+    apiClient.get('/config').then(r => r.data),
 }
 
 export const settingsApi = {
