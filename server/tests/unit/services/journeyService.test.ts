@@ -389,6 +389,8 @@ describe('addTripToJourney / removeTripFromJourney', () => {
       end_date: '2026-03-03',
     });
     const place = createPlace(testDb, trip.id, { name: 'Eiffel Tower' });
+    const day025 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day025.id, place.id);
 
     addTripToJourney(journey.id, trip.id, user.id);
 
@@ -562,6 +564,46 @@ describe('deleteEntry', () => {
     const entry = createJourneyEntry(testDb, journey.id, owner.id, { entry_date: '2026-03-01' });
 
     expect(deleteEntry(entry.id, viewer.id)).toBe(false);
+  });
+
+  it('JOURNEY-SVC-037b: deleting a filled skeleton reverts it back to skeleton', () => {
+    const { user } = createUser(testDb);
+    const journey = createJourney(testDb, user.id);
+    const trip = createTrip(testDb, user.id);
+    const place = createPlace(testDb, trip.id, { name: 'Tokyo Tower' });
+
+    // Create a filled entry that originated from a trip skeleton
+    const now = Date.now();
+    testDb.prepare(`
+      INSERT INTO journey_entries (journey_id, source_trip_id, source_place_id, author_id, type, title, story, mood, entry_date, location_name, visibility, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'entry', 'Tokyo Tower', 'Amazing view!', 'amazing', '2026-03-01', 'Tokyo', 'private', 0, ?, ?)
+    `).run(journey.id, trip.id, place.id, user.id, now, now);
+    const entry = testDb.prepare('SELECT * FROM journey_entries WHERE journey_id = ? AND source_place_id = ?').get(journey.id, place.id) as any;
+
+    const result = deleteEntry(entry.id, user.id);
+    expect(result).toBe(true);
+
+    // Entry should still exist but reverted to skeleton
+    const reverted = testDb.prepare('SELECT * FROM journey_entries WHERE id = ?').get(entry.id) as any;
+    expect(reverted).toBeDefined();
+    expect(reverted.type).toBe('skeleton');
+    expect(reverted.story).toBeNull();
+    expect(reverted.mood).toBeNull();
+    expect(reverted.source_trip_id).toBe(trip.id);
+    expect(reverted.source_place_id).toBe(place.id);
+    expect(reverted.title).toBe('Tokyo Tower');
+  });
+
+  it('JOURNEY-SVC-037c: deleting an independent entry permanently removes it', () => {
+    const { user } = createUser(testDb);
+    const journey = createJourney(testDb, user.id);
+    const entry = createJourneyEntry(testDb, journey.id, user.id, { entry_date: '2026-03-01', story: 'Manual entry' });
+
+    const result = deleteEntry(entry.id, user.id);
+    expect(result).toBe(true);
+
+    const row = testDb.prepare('SELECT * FROM journey_entries WHERE id = ?').get(entry.id);
+    expect(row).toBeUndefined();
   });
 });
 
@@ -809,6 +851,9 @@ describe('syncTripPlaces', () => {
     });
     const place1 = createPlace(testDb, trip.id, { name: 'Eiffel Tower' });
     const place2 = createPlace(testDb, trip.id, { name: 'Louvre' });
+    const days055 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 2').all(trip.id) as { id: number }[];
+    createDayAssignment(testDb, days055[0].id, place1.id);
+    createDayAssignment(testDb, days055[1].id, place2.id);
 
     syncTripPlaces(journey.id, trip.id, user.id);
 
@@ -828,7 +873,9 @@ describe('syncTripPlaces', () => {
       start_date: '2026-05-01',
       end_date: '2026-05-02',
     });
-    createPlace(testDb, trip.id, { name: 'Notre Dame' });
+    const place056 = createPlace(testDb, trip.id, { name: 'Notre Dame' });
+    const day056 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day056.id, place056.id);
 
     syncTripPlaces(journey.id, trip.id, user.id);
     syncTripPlaces(journey.id, trip.id, user.id); // second call
@@ -879,6 +926,8 @@ describe('onPlaceCreated', () => {
 
     // Create a new place after trip is linked
     const place = createPlace(testDb, trip.id, { name: 'Sagrada Familia' });
+    const day058 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day058.id, place.id);
     onPlaceCreated(trip.id, place.id);
 
     const skeleton = testDb.prepare(
@@ -911,6 +960,8 @@ describe('onPlaceCreated', () => {
     addTripToJourney(journey.id, trip.id, user.id);
 
     const place = createPlace(testDb, trip.id, { name: 'Arc de Triomphe' });
+    const day060 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day060.id, place.id);
     onPlaceCreated(trip.id, place.id);
     onPlaceCreated(trip.id, place.id); // second call
 
@@ -931,6 +982,8 @@ describe('onPlaceUpdated', () => {
       end_date: '2026-08-03',
     });
     const place = createPlace(testDb, trip.id, { name: 'Old Name' });
+    const day061 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day061.id, place.id);
     addTripToJourney(journey.id, trip.id, user.id);
 
     // Update the place name directly in DB
@@ -954,6 +1007,8 @@ describe('onPlaceUpdated', () => {
       end_date: '2026-08-02',
     });
     const place = createPlace(testDb, trip.id, { name: 'Original Place' });
+    const day062 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day062.id, place.id);
     addTripToJourney(journey.id, trip.id, user.id);
 
     // Promote the skeleton to a full entry
@@ -1017,6 +1072,8 @@ describe('onPlaceDeleted', () => {
       end_date: '2026-09-02',
     });
     const place = createPlace(testDb, trip.id, { name: 'Detach Place' });
+    const day065 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 1').get(trip.id) as { id: number };
+    createDayAssignment(testDb, day065.id, place.id);
     addTripToJourney(journey.id, trip.id, user.id);
 
     // Promote the skeleton to a filled entry
@@ -1115,7 +1172,11 @@ describe('setPhotoProvider', () => {
 
     setPhotoProvider(photo!.id, 'immich', 'immich-asset-789', user.id);
 
-    const updated = testDb.prepare('SELECT * FROM journey_photos WHERE id = ?').get(photo!.id) as any;
+    const updated = testDb.prepare(`
+      SELECT jp.*, tkp.provider, tkp.asset_id, tkp.owner_id
+      FROM journey_photos jp JOIN trek_photos tkp ON tkp.id = jp.photo_id
+      WHERE jp.id = ?
+    `).get(photo!.id) as any;
     expect(updated.provider).toBe('immich');
     expect(updated.asset_id).toBe('immich-asset-789');
     expect(updated.owner_id).toBe(user.id);
@@ -1219,7 +1280,7 @@ describe('listUserTrips', () => {
 // -- Edge cases ----------------------------------------------------------------
 
 describe('Edge cases', () => {
-  it('JOURNEY-SVC-081: deleteEntry moves photos to Gallery entry instead of deleting them', () => {
+  it('JOURNEY-SVC-081: deleteEntry deletes photos along with the entry', () => {
     const { user } = createUser(testDb);
     const journey = createJourney(testDb, user.id);
     const entry = createJourneyEntry(testDb, journey.id, user.id, { entry_date: '2026-03-01' });
@@ -1228,13 +1289,9 @@ describe('Edge cases', () => {
     const result = deleteEntry(entry.id, user.id);
     expect(result).toBe(true);
 
-    // Photo should still exist, moved to a Gallery entry
-    const movedPhoto = testDb.prepare('SELECT * FROM journey_photos WHERE id = ?').get(photo!.id) as any;
-    expect(movedPhoto).toBeDefined();
-    expect(movedPhoto.entry_id).not.toBe(entry.id);
-
-    const galleryEntry = testDb.prepare('SELECT * FROM journey_entries WHERE id = ?').get(movedPhoto.entry_id) as any;
-    expect(galleryEntry.title).toBe('Gallery');
+    // Photo should be deleted with the entry
+    const deletedPhoto = testDb.prepare('SELECT * FROM journey_photos WHERE id = ?').get(photo!.id) as any;
+    expect(deletedPhoto).toBeUndefined();
   });
 
   it('JOURNEY-SVC-082: updateJourney can set cover_gradient', () => {
@@ -1308,9 +1365,11 @@ describe('Edge cases', () => {
     ).get(journey.id) as any;
     expect(photoEntry).toBeDefined();
 
-    const photos = testDb.prepare(
-      'SELECT * FROM journey_photos WHERE entry_id = ?'
-    ).all(photoEntry.id);
+    const photos = testDb.prepare(`
+      SELECT jp.*, tkp.asset_id FROM journey_photos jp
+      JOIN trek_photos tkp ON tkp.id = jp.photo_id
+      WHERE jp.entry_id = ?
+    `).all(photoEntry.id);
     expect(photos.length).toBe(1);
     expect((photos[0] as any).asset_id).toBe('immich-photo-1');
   });
@@ -1325,6 +1384,9 @@ describe('Edge cases', () => {
     });
     const place1 = createPlace(testDb, trip.id, { name: 'Skeleton Place' });
     const place2 = createPlace(testDb, trip.id, { name: 'Filled Place' });
+    const days087 = testDb.prepare('SELECT id FROM days WHERE trip_id = ? ORDER BY date ASC LIMIT 2').all(trip.id) as { id: number }[];
+    createDayAssignment(testDb, days087[0].id, place1.id);
+    createDayAssignment(testDb, days087[1].id, place2.id);
     addTripToJourney(journey.id, trip.id, user.id);
 
     // Promote one skeleton to a filled entry

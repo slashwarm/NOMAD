@@ -190,11 +190,12 @@ describe('AddonManager', () => {
     expect(screen.queryByText('Bag Tracking')).not.toBeInTheDocument();
   });
 
-  it('FE-ADMIN-ADDON-010: photo provider sub-toggles shown for Memories addon', async () => {
+  it('FE-ADMIN-ADDON-010: photo provider sub-toggles shown under Journey addon', async () => {
     server.use(
       http.get('/api/admin/addons', () =>
         HttpResponse.json({
           addons: [
+            buildAddon({ id: 'journey', name: 'Journey', type: 'global', icon: 'Compass', enabled: true }),
             buildAddon({ id: 'photos', name: 'Memories', type: 'trip', icon: 'Image', enabled: false }),
             buildAddon({ id: 'unsplash', name: 'Unsplash', type: 'photo_provider', enabled: true }),
             buildAddon({ id: 'pexels', name: 'Pexels', type: 'photo_provider', enabled: false }),
@@ -204,18 +205,16 @@ describe('AddonManager', () => {
     );
     render(<AddonManager />);
 
-    // Provider sub-rows are visible
+    // Provider sub-rows are visible under Journey addon
     await screen.findByText('Unsplash');
     expect(screen.getByText('Pexels')).toBeInTheDocument();
 
-    // Memories row shows name override
-    expect(screen.getByText('Memories providers')).toBeInTheDocument();
+    // Journey addon is rendered
+    expect(screen.getByText('Journey')).toBeInTheDocument();
 
-    // The photos addon row itself has no top-level toggle (hideToggle = true)
-    // The toggle buttons are only for the providers
+    // Toggle buttons: journey toggle + 2 provider toggles
     const toggleBtns = screen.getAllByRole('button').filter(b => b.classList.contains('rounded-full'));
-    // Should be 2 provider toggles (no main toggle for the photos addon)
-    expect(toggleBtns.length).toBe(2);
+    expect(toggleBtns.length).toBe(3);
   });
 
   it('FE-ADMIN-ADDON-011: icon falls back to Puzzle when icon name unknown', async () => {

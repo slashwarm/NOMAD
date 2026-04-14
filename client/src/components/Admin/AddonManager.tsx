@@ -4,10 +4,10 @@ import { useTranslation } from '../../i18n'
 import { useSettingsStore } from '../../store/settingsStore'
 import { useAddonStore } from '../../store/addonStore'
 import { useToast } from '../shared/Toast'
-import { Puzzle, ListChecks, Wallet, FileText, CalendarDays, Globe, Briefcase, Image, Terminal, Link2, Compass } from 'lucide-react'
+import { Puzzle, ListChecks, Wallet, FileText, CalendarDays, Globe, Briefcase, Image, Terminal, Link2, Compass, BookOpen } from 'lucide-react'
 
 const ICON_MAP = {
-  ListChecks, Wallet, FileText, CalendarDays, Puzzle, Globe, Briefcase, Image, Terminal, Link2, Compass,
+  ListChecks, Wallet, FileText, CalendarDays, Puzzle, Globe, Briefcase, Image, Terminal, Link2, Compass, BookOpen,
 }
 
 interface Addon {
@@ -103,11 +103,11 @@ export default function AddonManager({ bagTrackingEnabled, onToggleBagTracking }
     }
   }
 
-  const tripAddons = addons.filter(a => a.type === 'trip')
-  const globalAddons = addons.filter(a => a.type === 'global')
   const photoProviderAddons = addons.filter(isPhotoProviderAddon)
+  const photosAddon = addons.filter(a => a.type === 'trip').find(isPhotosAddon)
+  const tripAddons = addons.filter(a => a.type === 'trip' && !isPhotosAddon(a))
+  const globalAddons = addons.filter(a => a.type === 'global')
   const integrationAddons = addons.filter(a => a.type === 'integration')
-  const photosAddon = tripAddons.find(isPhotosAddon)
   const providerOptions: ProviderOption[] = photoProviderAddons.map((provider) => ({
       key: provider.id,
       label: provider.name,
@@ -153,42 +153,7 @@ export default function AddonManager({ bagTrackingEnabled, onToggleBagTracking }
                 </div>
                 {tripAddons.map(addon => (
                   <div key={addon.id}>
-                    <AddonRow
-                      addon={addon}
-                      onToggle={handleToggle}
-                      t={t}
-                      nameOverride={photosAddon && addon.id === photosAddon.id ? 'Memories providers' : undefined}
-                      descriptionOverride={photosAddon && addon.id === photosAddon.id ? 'Enable or disable each photo provider.' : undefined}
-                      statusOverride={photosAddon && addon.id === photosAddon.id ? photosDerivedEnabled : undefined}
-                      hideToggle={photosAddon && addon.id === photosAddon.id}
-                    />
-                    {photosAddon && addon.id === photosAddon.id && providerOptions.length > 0 && (
-                      <div className="px-6 py-3 border-b" style={{ borderColor: 'var(--border-secondary)', background: 'var(--bg-secondary)', paddingLeft: 70 }}>
-                        <div className="space-y-2">
-                          {providerOptions.map(provider => (
-                            <div key={provider.key} className="flex items-center gap-4" style={{ minHeight: 32 }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{provider.label}</div>
-                                <div className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>{provider.description}</div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="hidden sm:inline text-xs font-medium" style={{ color: provider.enabled ? 'var(--text-primary)' : 'var(--text-faint)' }}>
-                                  {provider.enabled ? t('admin.addons.enabled') : t('admin.addons.disabled')}
-                                </span>
-                                <button
-                                  onClick={provider.toggle}
-                                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
-                                  style={{ background: provider.enabled ? 'var(--text-primary)' : 'var(--border-primary)' }}
-                                >
-                                  <span className="absolute left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200"
-                                    style={{ transform: provider.enabled ? 'translateX(20px)' : 'translateX(0)' }} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <AddonRow addon={addon} onToggle={handleToggle} t={t} />
                     {addon.id === 'packing' && addon.enabled && onToggleBagTracking && (
                       <div className="flex items-center gap-4 px-6 py-3 border-b" style={{ borderColor: 'var(--border-secondary)', background: 'var(--bg-secondary)', paddingLeft: 70 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -223,7 +188,37 @@ export default function AddonManager({ bagTrackingEnabled, onToggleBagTracking }
                   </span>
                 </div>
                 {globalAddons.map(addon => (
-                  <AddonRow key={addon.id} addon={addon} onToggle={handleToggle} t={t} />
+                  <div key={addon.id}>
+                    <AddonRow addon={addon} onToggle={handleToggle} t={t} />
+                    {/* Memories providers as sub-items under Journey addon */}
+                    {addon.id === 'journey' && providerOptions.length > 0 && (
+                      <div className="px-6 py-3 border-b" style={{ borderColor: 'var(--border-secondary)', background: 'var(--bg-secondary)', paddingLeft: 70 }}>
+                        <div className="space-y-2">
+                          {providerOptions.map(provider => (
+                            <div key={provider.key} className="flex items-center gap-4" style={{ minHeight: 32 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{provider.label}</div>
+                                <div className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>{provider.description}</div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="hidden sm:inline text-xs font-medium" style={{ color: provider.enabled ? 'var(--text-primary)' : 'var(--text-faint)' }}>
+                                  {provider.enabled ? t('admin.addons.enabled') : t('admin.addons.disabled')}
+                                </span>
+                                <button
+                                  onClick={provider.toggle}
+                                  className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                                  style={{ background: provider.enabled ? 'var(--text-primary)' : 'var(--border-primary)' }}
+                                >
+                                  <span className="absolute left-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200"
+                                    style={{ transform: provider.enabled ? 'translateX(20px)' : 'translateX(0)' }} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

@@ -309,6 +309,7 @@ export const journeyApi = {
   // Photos
   uploadPhotos: (entryId: number, formData: FormData) => apiClient.post(`/journeys/entries/${entryId}/photos`, formData, { headers: { 'Content-Type': undefined as any } }).then(r => r.data),
   addProviderPhoto: (entryId: number, provider: string, assetId: string, caption?: string) => apiClient.post(`/journeys/entries/${entryId}/provider-photos`, { provider, asset_id: assetId, caption }).then(r => r.data),
+  addProviderPhotos: (entryId: number, provider: string, assetIds: string[], caption?: string) => apiClient.post(`/journeys/entries/${entryId}/provider-photos`, { provider, asset_ids: assetIds, caption }).then(r => r.data),
   linkPhoto: (entryId: number, photoId: number) => apiClient.post(`/journeys/entries/${entryId}/link-photo`, { photo_id: photoId }).then(r => r.data),
   updatePhoto: (photoId: number, data: Record<string, unknown>) => apiClient.patch(`/journeys/photos/${photoId}`, data).then(r => r.data),
   deletePhoto: (photoId: number) => apiClient.delete(`/journeys/photos/${photoId}`).then(r => r.data),
@@ -320,6 +321,9 @@ export const journeyApi = {
   addContributor: (id: number, userId: number, role: string) => apiClient.post(`/journeys/${id}/contributors`, { user_id: userId, role }).then(r => r.data),
   updateContributor: (id: number, userId: number, role: string) => apiClient.patch(`/journeys/${id}/contributors/${userId}`, { role }).then(r => r.data),
   removeContributor: (id: number, userId: number) => apiClient.delete(`/journeys/${id}/contributors/${userId}`).then(r => r.data),
+
+  // Preferences
+  updatePreferences: (id: number, data: { hide_skeletons?: boolean }) => apiClient.patch(`/journeys/${id}/preferences`, data).then(r => r.data),
 
   // Share
   getShareLink: (id: number) => apiClient.get(`/journeys/${id}/share-link`).then(r => r.data),

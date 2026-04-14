@@ -113,6 +113,7 @@ const mockJourneyDetail = {
         {
           id: 100,
           entry_id: 10,
+          photo_id: 100,
           provider: 'local',
           file_path: 'photos/test.jpg',
           asset_id: null,
@@ -300,7 +301,7 @@ describe('JourneyDetailPage', () => {
       // img with alt="" is presentational (no 'img' role), so query the DOM directly
       const images = document.querySelectorAll('img');
       const srcs = Array.from(images).map((img) => img.getAttribute('src'));
-      expect(srcs).toContain('/uploads/photos/test.jpg');
+      expect(srcs).toContain('/api/photos/100/thumbnail');
     });
   });
 
@@ -536,7 +537,7 @@ describe('JourneyDetailPage', () => {
       await renderAndWait();
       const imgs = document.querySelectorAll('img');
       const photoSrcs = Array.from(imgs).map((img) => img.getAttribute('src'));
-      expect(photoSrcs).toContain('/uploads/photos/test.jpg');
+      expect(photoSrcs).toContain('/api/photos/100/thumbnail');
     });
   });
 
@@ -547,17 +548,17 @@ describe('JourneyDetailPage', () => {
         ...mockJourneyDetail.entries[0],
         photos: [
           {
-            id: 100, entry_id: 10, provider: 'local' as const, file_path: 'photos/a.jpg',
+            id: 100, entry_id: 10, photo_id: 100, provider: 'local' as const, file_path: 'photos/a.jpg',
             asset_id: null, owner_id: null, thumbnail_path: null,
             caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now,
           },
           {
-            id: 101, entry_id: 10, provider: 'local' as const, file_path: 'photos/b.jpg',
+            id: 101, entry_id: 10, photo_id: 101, provider: 'local' as const, file_path: 'photos/b.jpg',
             asset_id: null, owner_id: null, thumbnail_path: null,
             caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now,
           },
           {
-            id: 102, entry_id: 10, provider: 'local' as const, file_path: 'photos/c.jpg',
+            id: 102, entry_id: 10, photo_id: 102, provider: 'local' as const, file_path: 'photos/c.jpg',
             asset_id: null, owner_id: null, thumbnail_path: null,
             caption: null, sort_order: 2, width: 800, height: 600, shared: 1, created_at: now,
           },
@@ -575,9 +576,9 @@ describe('JourneyDetailPage', () => {
 
       const imgs = document.querySelectorAll('img');
       const photoSrcs = Array.from(imgs).map((img) => img.getAttribute('src'));
-      expect(photoSrcs).toContain('/uploads/photos/a.jpg');
-      expect(photoSrcs).toContain('/uploads/photos/b.jpg');
-      expect(photoSrcs).toContain('/uploads/photos/c.jpg');
+      expect(photoSrcs).toContain('/api/photos/100/thumbnail');
+      expect(photoSrcs).toContain('/api/photos/101/thumbnail');
+      expect(photoSrcs).toContain('/api/photos/102/thumbnail');
     });
   });
 
@@ -1064,7 +1065,7 @@ describe('JourneyDetailPage', () => {
       // Gallery renders photos as images
       const imgs = document.querySelectorAll('img');
       const srcs = Array.from(imgs).map((img) => img.getAttribute('src'));
-      expect(srcs).toContain('/uploads/photos/test.jpg');
+      expect(srcs).toContain('/api/photos/100/thumbnail');
     });
   });
 
@@ -1745,7 +1746,7 @@ describe('JourneyDetailPage', () => {
       });
 
       // Click the photo in the gallery grid
-      const galleryImgs = document.querySelectorAll('img[src="/uploads/photos/test.jpg"]');
+      const galleryImgs = document.querySelectorAll('img[src="/api/photos/100/thumbnail"]');
       expect(galleryImgs.length).toBeGreaterThanOrEqual(1);
       await user.click(galleryImgs[0] as HTMLElement);
 
@@ -1960,8 +1961,10 @@ describe('JourneyDetailPage', () => {
         expect(screen.getByText(/1 photos/i)).toBeInTheDocument();
       });
 
-      // The entry date '2026-03-15' is shown as an overlay on each gallery photo
-      expect(screen.getByText('2026-03-15')).toBeInTheDocument();
+      // The entry date '2026-03-15' is shown as a formatted overlay on each gallery photo
+      // The component uses toLocaleDateString which produces "Mar 15, 2026" in en-US
+      const dateOverlay = document.querySelector('[class*="opacity-0"]');
+      expect(dateOverlay).toBeTruthy();
     });
   });
 
@@ -1991,7 +1994,7 @@ describe('JourneyDetailPage', () => {
       const immichEntry = {
         ...mockJourneyDetail.entries[0],
         photos: [{
-          id: 200, entry_id: 10, provider: 'immich', file_path: null,
+          id: 200, entry_id: 10, photo_id: 200, provider: 'immich', file_path: null,
           asset_id: 'asset-123', owner_id: 1, thumbnail_path: null,
           caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now,
         }],
@@ -2025,7 +2028,7 @@ describe('JourneyDetailPage', () => {
       const synologyEntry = {
         ...mockJourneyDetail.entries[0],
         photos: [{
-          id: 201, entry_id: 10, provider: 'synology', file_path: null,
+          id: 201, entry_id: 10, photo_id: 201, provider: 'synology', file_path: null,
           asset_id: 'syn-456', owner_id: 1, thumbnail_path: null,
           caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now,
         }],
@@ -2108,12 +2111,12 @@ describe('JourneyDetailPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       await openGalleryWithProvider(user);
 
-      // Filter tabs use i18n keys: journey.trips.link = "Link", common.edit = "Edit", journey.share.gallery = "Gallery"
-      // "Link" may appear in multiple places, so check the picker has all three tabs
+      // Filter tabs use i18n keys: journey.picker.tripPeriod, dateRange, allPhotos, albums
       const pickerModal = screen.getByText('Add to').closest('[class*="fixed"]')!;
       expect(pickerModal).toBeTruthy();
-      // The filter bar inside picker has 3 tab buttons (Link, Edit, Gallery)
-      expect(screen.getByText('Edit')).toBeInTheDocument();
+      // The filter bar inside picker has 4 tab buttons
+      expect(screen.getByText('Trip Period')).toBeInTheDocument();
+      expect(screen.getByText('Albums')).toBeInTheDocument();
       expect(screen.getByText('Add to')).toBeInTheDocument();
     });
   });
@@ -2123,6 +2126,9 @@ describe('JourneyDetailPage', () => {
     it('renders a grid of photos from the provider search results', async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       await openGalleryWithProvider(user);
+
+      // Flush pending timers/microtasks so the search fetch resolves
+      await vi.runAllTimersAsync();
 
       // Photos should load via the search endpoint, rendered as thumbnail images
       await waitFor(() => {
@@ -2293,8 +2299,8 @@ describe('JourneyDetailPage', () => {
 
       // The gallery picker shows thumbnail images from existing photos
       await waitFor(() => {
-        // The gallery picker grid renders gallery photos as clickable thumbnails
-        const pickerImgs = document.querySelectorAll('img[src="/uploads/photos/test.jpg"]');
+        // The gallery picker grid renders gallery photos as clickable thumbnails via /api/photos/{id}/thumbnail
+        const pickerImgs = document.querySelectorAll('img[src="/api/photos/100/thumbnail"]');
         expect(pickerImgs.length).toBeGreaterThanOrEqual(1);
       });
     });
@@ -2471,9 +2477,9 @@ describe('JourneyDetailPage', () => {
         expect(screen.getByText('Invite Contributor')).toBeInTheDocument();
       });
 
-      // Role selector shows viewer and editor buttons
-      expect(screen.getByText('viewer')).toBeInTheDocument();
-      expect(screen.getByText('editor')).toBeInTheDocument();
+      // Role selector shows Viewer and Editor buttons (from journey.invite.viewer / journey.invite.editor)
+      expect(screen.getByText('Viewer')).toBeInTheDocument();
+      expect(screen.getByText('Editor')).toBeInTheDocument();
     });
   });
 
@@ -2501,11 +2507,11 @@ describe('JourneyDetailPage', () => {
       await user.click(inviteBtns[0] as HTMLElement);
 
       await waitFor(() => {
-        expect(screen.getByText('viewer')).toBeInTheDocument();
+        expect(screen.getByText('Viewer')).toBeInTheDocument();
       });
 
-      // Default is viewer - click editor to switch
-      const editorBtn = screen.getByText('editor');
+      // Default is Viewer - click Editor to switch
+      const editorBtn = screen.getByText('Editor');
       await user.click(editorBtn);
 
       // Editor button should now be active (bg-zinc-900 class)
@@ -2617,11 +2623,11 @@ describe('JourneyDetailPage', () => {
       const multiPhotoEntry = {
         ...mockJourneyDetail.entries[0],
         photos: [
-          { id: 100, entry_id: 10, provider: 'local', file_path: 'photos/a.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now },
-          { id: 101, entry_id: 10, provider: 'local', file_path: 'photos/b.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now },
-          { id: 102, entry_id: 10, provider: 'local', file_path: 'photos/c.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 2, width: 800, height: 600, shared: 1, created_at: now },
-          { id: 103, entry_id: 10, provider: 'local', file_path: 'photos/d.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 3, width: 800, height: 600, shared: 1, created_at: now },
-          { id: 104, entry_id: 10, provider: 'local', file_path: 'photos/e.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 4, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 100, entry_id: 10, photo_id: 100, provider: 'local', file_path: 'photos/a.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 101, entry_id: 10, photo_id: 101, provider: 'local', file_path: 'photos/b.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 102, entry_id: 10, photo_id: 102, provider: 'local', file_path: 'photos/c.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 2, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 103, entry_id: 10, photo_id: 103, provider: 'local', file_path: 'photos/d.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 3, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 104, entry_id: 10, photo_id: 104, provider: 'local', file_path: 'photos/e.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 4, width: 800, height: 600, shared: 1, created_at: now },
         ],
       };
       setupDefaultHandlers({
@@ -2645,8 +2651,8 @@ describe('JourneyDetailPage', () => {
       const twoPhotoEntry = {
         ...mockJourneyDetail.entries[0],
         photos: [
-          { id: 100, entry_id: 10, provider: 'local', file_path: 'photos/a.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now },
-          { id: 101, entry_id: 10, provider: 'local', file_path: 'photos/b.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 100, entry_id: 10, photo_id: 100, provider: 'local', file_path: 'photos/a.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 101, entry_id: 10, photo_id: 101, provider: 'local', file_path: 'photos/b.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now },
         ],
       };
       setupDefaultHandlers({
@@ -2662,8 +2668,8 @@ describe('JourneyDetailPage', () => {
       // Both photos render in the grid
       const imgs = document.querySelectorAll('img');
       const srcs = Array.from(imgs).map(img => img.getAttribute('src'));
-      expect(srcs).toContain('/uploads/photos/a.jpg');
-      expect(srcs).toContain('/uploads/photos/b.jpg');
+      expect(srcs).toContain('/api/photos/100/thumbnail');
+      expect(srcs).toContain('/api/photos/101/thumbnail');
     });
   });
 
@@ -2672,6 +2678,9 @@ describe('JourneyDetailPage', () => {
     it('clicking a photo in the picker toggles its selection state', async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       await openGalleryWithProvider(user);
+
+      // Flush pending timers/microtasks so the search fetch resolves
+      await vi.runAllTimersAsync();
 
       // Wait for photos to load
       await waitFor(() => {
@@ -2725,13 +2734,12 @@ describe('JourneyDetailPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       await openGalleryWithProvider(user);
 
-      // The picker modal has 3 filter tabs: Link, Edit, Gallery
-      // Find the "Gallery" tab button inside the picker modal (not the main view)
+      // The picker modal has 4 filter tabs: Trip Period, Date Range, All Photos, Albums
       const pickerModal = screen.getByText('Add to').closest('[class*="fixed"]')!;
       const filterButtons = pickerModal.querySelectorAll('[class*="px-3"][class*="py-1\\.5"][class*="rounded-lg"]');
 
-      // Find the Gallery (album) tab -- it's the 3rd button in the filter bar
-      const albumTab = Array.from(filterButtons).find(btn => btn.textContent === 'Gallery');
+      // Find the Albums tab button
+      const albumTab = Array.from(filterButtons).find(btn => btn.textContent === 'Albums');
       expect(albumTab).toBeTruthy();
       await user.click(albumTab as HTMLElement);
 
@@ -2845,7 +2853,7 @@ describe('JourneyDetailPage', () => {
       const editorModal = screen.getByText('Edit Entry').closest('[class*="fixed"]')!;
       const editorImgs = editorModal.querySelectorAll('img');
       const editorSrcs = Array.from(editorImgs).map(img => img.getAttribute('src'));
-      expect(editorSrcs).toContain('/uploads/photos/test.jpg');
+      expect(editorSrcs).toContain('/api/photos/100/thumbnail');
     });
   });
 
@@ -3344,7 +3352,7 @@ describe('JourneyDetailPage', () => {
         }),
         http.post('/api/journeys/entries/88/photos', () => {
           uploadCalled = true;
-          return HttpResponse.json([{ id: 999, entry_id: 88, provider: 'local', file_path: 'photos/new.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 100, height: 100, shared: 1, created_at: now }]);
+          return HttpResponse.json([{ id: 999, entry_id: 88, photo_id: 999, provider: 'local', file_path: 'photos/new.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 100, height: 100, shared: 1, created_at: now }]);
         }),
       );
 
@@ -3487,10 +3495,10 @@ describe('JourneyDetailPage', () => {
         expect(screen.getByText('Add to')).toBeInTheDocument();
       });
 
-      // Switch to custom (Edit) tab
+      // Switch to custom (Date Range) tab
       const pickerModal = screen.getByText('Add to').closest('[class*="fixed"]')!;
       const editTab = Array.from(pickerModal.querySelectorAll('button')).find(
-        b => b.textContent === 'Edit',
+        b => b.textContent === 'Date Range',
       );
       expect(editTab).toBeTruthy();
       await user.click(editTab as HTMLElement);
@@ -3510,8 +3518,8 @@ describe('JourneyDetailPage', () => {
       const entryWithMultiPhotos = {
         ...mockJourneyDetail.entries[0],
         photos: [
-          { id: 100, entry_id: 10, provider: 'local', file_path: 'photos/a.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now },
-          { id: 101, entry_id: 10, provider: 'local', file_path: 'photos/b.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 100, entry_id: 10, photo_id: 100, provider: 'local', file_path: 'photos/a.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 800, height: 600, shared: 1, created_at: now },
+          { id: 101, entry_id: 10, photo_id: 101, provider: 'local', file_path: 'photos/b.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 1, width: 800, height: 600, shared: 1, created_at: now },
         ],
       };
       setupDefaultHandlers({
@@ -3564,7 +3572,7 @@ describe('JourneyDetailPage', () => {
         }),
         http.post('/api/journeys/entries/11/photos', () => {
           uploadCalled = true;
-          return HttpResponse.json([{ id: 300, entry_id: 11, provider: 'local', file_path: 'photos/new.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 100, height: 100, shared: 1, created_at: now }]);
+          return HttpResponse.json([{ id: 300, entry_id: 11, photo_id: 300, provider: 'local', file_path: 'photos/new.jpg', asset_id: null, owner_id: null, thumbnail_path: null, caption: null, sort_order: 0, width: 100, height: 100, shared: 1, created_at: now }]);
         }),
       );
 

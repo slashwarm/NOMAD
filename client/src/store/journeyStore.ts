@@ -42,17 +42,19 @@ export interface JourneyEntry {
 export interface JourneyPhoto {
   id: number
   entry_id: number
-  provider: 'local' | 'immich' | 'synologyphotos'
+  photo_id: number
+  caption?: string | null
+  sort_order: number
+  shared: number
+  created_at: number
+  // Joined from trek_photos for display
+  provider?: string
   asset_id?: string | null
   owner_id?: number | null
   file_path?: string | null
   thumbnail_path?: string | null
-  caption?: string | null
-  sort_order: number
   width?: number | null
   height?: number | null
-  shared: number
-  created_at: number
 }
 
 export interface JourneyTrip {
@@ -80,12 +82,14 @@ export interface JourneyDetail extends Journey {
   trips: JourneyTrip[]
   contributors: JourneyContributor[]
   stats: { entries: number; photos: number; cities: number }
+  hide_skeletons?: boolean
 }
 
 interface JourneyState {
   journeys: Journey[]
   current: JourneyDetail | null
   loading: boolean
+  notFound: boolean
 
   loadJourneys: () => Promise<void>
   loadJourney: (id: number) => Promise<void>
@@ -107,6 +111,7 @@ export const useJourneyStore = create<JourneyState>((set, get) => ({
   journeys: [],
   current: null,
   loading: false,
+  notFound: false,
 
   loadJourneys: async () => {
     set({ loading: true })
@@ -119,10 +124,15 @@ export const useJourneyStore = create<JourneyState>((set, get) => ({
   },
 
   loadJourney: async (id) => {
-    set({ loading: true })
+    set({ loading: true, notFound: false })
     try {
       const data = await journeyApi.get(id)
       set({ current: data })
+    } catch (err: any) {
+      if (err?.response?.status === 404) {
+        set({ current: null, notFound: true })
+      }
+      throw err
     } finally {
       set({ loading: false })
     }

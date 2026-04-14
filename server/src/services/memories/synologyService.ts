@@ -452,6 +452,36 @@ export async function listSynologyAlbums(userId: number): Promise<ServiceResult<
 }
 
 
+export async function getSynologyAlbumPhotos(userId: number, albumId: string): Promise<ServiceResult<AssetsList>> {
+    const allItems: SynologyPhotoItem[] = [];
+    const pageSize = 1000;
+    let offset = 0;
+
+    while (true) {
+        const result = await _requestSynologyApi<{ list: SynologyPhotoItem[] }>(userId, {
+            api: 'SYNO.Foto.Browse.Item',
+            method: 'list',
+            version: 1,
+            album_id: Number(albumId),
+            offset,
+            limit: pageSize,
+            additional: ['thumbnail'],
+        });
+        if (!result.success) return result as ServiceResult<AssetsList>;
+        const items = result.data.list || [];
+        allItems.push(...items);
+        if (items.length < pageSize) break;
+        offset += pageSize;
+    }
+
+    const assets = allItems.map(item => ({
+        id: String(item.additional?.thumbnail?.cache_key || item.id || ''),
+        takenAt: item.time ? new Date(item.time * 1000).toISOString() : '',
+    })).filter(a => a.id);
+
+    return success({ assets, total: assets.length, hasMore: false });
+}
+
 export async function syncSynologyAlbumLink(userId: number, tripId: string, linkId: string, sid: string): Promise<ServiceResult<SyncAlbumResult>> {
     const response = getAlbumIdFromLink(tripId, linkId, userId);
     if (!response.success) return response as ServiceResult<SyncAlbumResult>;
@@ -555,7 +585,6 @@ export async function streamSynologyAsset(
     targetUserId: number,
     photoId: string,
     kind: 'thumbnail' | 'original',
-    size?: string,
 ): Promise<void> {
     const parsedId = _splitPackedSynologyId(photoId);
     if (!parsedId) {
@@ -579,6 +608,8 @@ export async function streamSynologyAsset(
         return;
     }
 
+    
+    //size: 'sm' 240px| 'm' 320px| 'xl' 1280px| 'preview' ?
     const params = kind === 'thumbnail'
         ? new URLSearchParams({
             api: 'SYNO.Foto.Thumbnail',
@@ -587,7 +618,7 @@ export async function streamSynologyAsset(
             mode: 'download',
             id: parsedId.id,
             type: 'unit',
-            size: size,
+            size: 'sm',
             cache_key: parsedId.cacheKey,
             _sid: sid.data,
         })

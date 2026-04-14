@@ -286,7 +286,20 @@ export default function PlaceFormModal({
             onChange={e => handleChange('description', e.target.value)}
             rows={2}
             placeholder={t('places.formDescriptionPlaceholder')}
-            className="form-input" style={{ resize: 'none' }}
+            className="form-input" style={{ resize: 'vertical' }}
+          />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('places.formNotes')}</label>
+          <textarea
+            value={form.notes}
+            onChange={e => handleChange('notes', e.target.value)}
+            rows={3}
+            maxLength={2000}
+            placeholder={t('places.formNotesPlaceholder')}
+            className="form-input" style={{ resize: 'vertical' }}
           />
         </div>
 

@@ -296,8 +296,9 @@ export default function AtlasPage(): React.ReactElement {
       updateWhenIdle: false,
       tileSize: 256,
       zoomOffset: 0,
-      crossOrigin: true
-    }).addTo(map)
+      crossOrigin: true,
+      referrerPolicy: 'strict-origin-when-cross-origin',
+    } as any).addTo(map)
 
     // Preload adjacent zoom level tiles
     L.tileLayer(tileUrl, {
@@ -306,6 +307,7 @@ export default function AtlasPage(): React.ReactElement {
       opacity: 0,
       tileSize: 256,
       crossOrigin: true,
+      referrerPolicy: 'strict-origin-when-cross-origin',
     }).addTo(map)
 
     // Custom pane for region layer — above overlay (z-index 400)

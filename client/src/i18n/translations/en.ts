@@ -1,6 +1,8 @@
 const en: Record<string, string | { name: string; category: string }[]> = {
   // Common
   'common.save': 'Save',
+  'common.showMore': 'Show more',
+  'common.showLess': 'Show less',
   'common.cancel': 'Cancel',
   'common.delete': 'Delete',
   'common.edit': 'Edit',
@@ -950,6 +952,7 @@ const en: Record<string, string | { name: string; category: string }[]> = {
   'places.endTimeBeforeStart': 'End time is before start time',
   'places.timeCollision': 'Time overlap with:',
   'places.formWebsite': 'Website',
+  'places.formNotes': 'Notes',
   'places.formNotesPlaceholder': 'Personal notes...',
   'places.formReservation': 'Reservation',
   'places.reservationNotesPlaceholder': 'Reservation notes, confirmation number...',
@@ -1895,6 +1898,9 @@ const en: Record<string, string | { name: string; category: string }[]> = {
   'journey.detail.contributors': 'Contributors',
   'journey.detail.readMore': 'Read more',
   'journey.detail.prosCons': 'Pros & Cons',
+  'journey.detail.photos': 'photos',
+  'journey.detail.day': 'Day {number}',
+  'journey.detail.places': 'places',
 
   // Journey Detail — Stats
   'journey.stats.days': 'Days',
@@ -1902,6 +1908,8 @@ const en: Record<string, string | { name: string; category: string }[]> = {
   'journey.stats.entries': 'Entries',
   'journey.stats.photos': 'Photos',
   'journey.stats.places': 'Places',
+  'journey.skeletons.show': 'Show suggestions',
+  'journey.skeletons.hide': 'Hide suggestions',
 
   // Journey Detail — Verdict
   'journey.verdict.lovedIt': 'Loved it',
@@ -1913,6 +1921,7 @@ const en: Record<string, string | { name: string; category: string }[]> = {
 
   // Journey Entry Editor
   'journey.editor.uploadPhotos': 'Upload photos',
+  'journey.editor.uploading': 'Uploading...',
   'journey.editor.fromGallery': 'From Gallery',
   'journey.editor.allPhotosAdded': 'All photos already added',
   'journey.editor.writeStory': 'Write your story...',
@@ -1929,6 +1938,7 @@ const en: Record<string, string | { name: string; category: string }[]> = {
   'journey.editor.weather': 'Weather',
   'journey.editor.photoFirst': '1st',
   'journey.editor.makeFirst': 'Make 1st',
+  'journey.editor.searching': 'Searching...',
 
   // Journey Entry — Moods
   'journey.mood.amazing': 'Amazing',
@@ -1984,6 +1994,13 @@ const en: Record<string, string | { name: string; category: string }[]> = {
   'journey.share.deleteFailed': 'Failed to delete',
   'journey.share.updateFailed': 'Failed to update',
 
+  // Journey — Invite
+  'journey.invite.role': 'Role',
+  'journey.invite.viewer': 'Viewer',
+  'journey.invite.editor': 'Editor',
+  'journey.invite.invite': 'Invite',
+  'journey.invite.inviting': 'Inviting...',
+
   // Journey — Settings Dialog
   'journey.settings.title': 'Journey Settings',
   'journey.settings.coverImage': 'Cover Image',
@@ -2019,6 +2036,18 @@ const en: Record<string, string | { name: string; category: string }[]> = {
   'journey.pdf.theEnd': 'The End',
   'journey.pdf.saveAsPdf': 'Save as PDF',
   'journey.pdf.pages': 'pages',
+  'journey.picker.tripPeriod': 'Trip Period',
+  'journey.picker.dateRange': 'Date Range',
+  'journey.picker.allPhotos': 'All Photos',
+  'journey.picker.albums': 'Albums',
+  'journey.picker.selected': 'selected',
+  'journey.picker.addTo': 'Add to',
+  'journey.picker.newGallery': 'New Gallery',
+  'journey.picker.selectAll': 'Select all',
+  'journey.picker.deselectAll': 'Deselect all',
+  'journey.picker.noAlbums': 'No albums found',
+  'journey.picker.selectDate': 'Select date',
+  'journey.picker.search': 'Search',
 
   // Dashboard Mobile
   'dashboard.greeting.morning': 'Good morning,',

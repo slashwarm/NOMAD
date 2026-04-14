@@ -7,6 +7,7 @@ import {
     getSynologyStatus,
     testSynologyConnection,
     listSynologyAlbums,
+    getSynologyAlbumPhotos,
     syncSynologyAlbumLink,
     searchSynologyPhotos,
     getSynologyAssetInfo,
@@ -77,6 +78,11 @@ router.get('/albums', authenticate, async (req: Request, res: Response) => {
     handleServiceResult(res, await listSynologyAlbums(authReq.user.id));
 });
 
+router.get('/albums/:albumId/photos', authenticate, async (req: Request, res: Response) => {
+    const authReq = req as AuthRequest;
+    handleServiceResult(res, await getSynologyAlbumPhotos(authReq.user.id, req.params.albumId));
+});
+
 router.post('/trips/:tripId/album-links/:linkId/sync', authenticate, async (req: Request, res: Response) => {
     const authReq = req as AuthRequest;
     const { tripId, linkId } = req.params;
@@ -90,8 +96,12 @@ router.post('/search', authenticate, async (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
     const from = _parseStringBodyField(body.from);
     const to = _parseStringBodyField(body.to);
-    const offset = _parseNumberBodyField(body.offset, 0);
-    const limit = _parseNumberBodyField(body.limit, 100);
+    let offset = _parseNumberBodyField(body.offset, 0);
+    const page = _parseNumberBodyField(body.page, 1) - 1;
+    let limit = _parseNumberBodyField(body.limit, 100);
+    const size = _parseNumberBodyField(body.size, 0);
+    if(page > 0) offset = page*limit;
+    if(size > 0) limit = size;
 
     handleServiceResult(res, await searchSynologyPhotos(
         authReq.user.id,

@@ -51,14 +51,16 @@ vi.mock('../../src/utils/ssrfGuard', async () => {
     // Determine which API was called from the URL query param (e.g. ?api=SYNO.API.Auth)
     // or from the body for POST requests.
     let apiName = '';
+    let params = new URLSearchParams();
     try {
-      apiName = new URL(u).searchParams.get('api') || '';
+      params = new URL(u).searchParams;
+      apiName = params.get('api') || '';
     } catch {}
     if (!apiName && init?.body) {
-      const body = init.body instanceof URLSearchParams
+      params = init.body instanceof URLSearchParams
         ? init.body
         : new URLSearchParams(String(init.body));
-      apiName = body.get('api') || '';
+      apiName = params.get('api') || '';
     }
 
     // Auth login — used by settings save, status, test-connection
@@ -154,6 +156,8 @@ vi.mock('../../src/utils/ssrfGuard', async () => {
 
     // Thumbnail stream
     if (apiName === 'SYNO.Foto.Thumbnail') {
+      if (!(['sm', 'm', 'xl', 'preview'].includes(params.get('size') || '')))
+        return Promise.reject(new Error(`Unexpected thumbnail size: ${params.get('size')}`));
       const imageBytes = Buffer.from('fake-synology-thumbnail');
       return Promise.resolve({
         ok: true, status: 200,
@@ -437,6 +441,24 @@ describe('Synology asset access', () => {
     expect(res.headers['content-type']).toContain('image/jpeg');
   });
 
+  it('SYNO-032b — GET /api/photos/:id/thumbnail uses an allowed Synology thumbnail size', async () => {
+    const { user } = createUser(testDb);
+    setSynologyCredentials(testDb, user.id, 'https://synology.example.com', 'admin', 'pass');
+
+    const insert = testDb.prepare(
+      'INSERT INTO trek_photos (provider, asset_id, owner_id) VALUES (?, ?, ?)'
+    ).run('synologyphotos', '101_cachekey', user.id);
+    const trekPhotoId = Number(insert.lastInsertRowid);
+
+    vi.mocked(safeFetch).mockClear();
+
+    const res = await request(app)
+      .get(`/api/photos/${trekPhotoId}/thumbnail`)
+      .set('Cookie', authCookie(user.id));
+
+    expect(res.status).toBe(200);
+  });
+
   it('SYNO-033 — GET /assets/original streams image data for shared photo', async () => {
     const { user: owner } = createUser(testDb);
     const { user: member } = createUser(testDb);
@@ -470,9 +492,11 @@ describe('Synology asset access', () => {
     const { user: member } = createUser(testDb);
     // Insert a shared photo referencing a trip that doesn't exist (FK disabled temporarily)
     testDb.exec('PRAGMA foreign_keys = OFF');
+    testDb.prepare('INSERT OR IGNORE INTO trek_photos (provider, asset_id, owner_id) VALUES (?, ?, ?)').run('synologyphotos', '101_cachekey', owner.id);
+    const tkpSyno35 = testDb.prepare('SELECT id FROM trek_photos WHERE provider = ? AND asset_id = ? AND owner_id = ?').get('synologyphotos', '101_cachekey', owner.id) as any;
     testDb.prepare(
-      'INSERT INTO trip_photos (trip_id, user_id, asset_id, provider, shared) VALUES (?, ?, ?, ?, ?)'
-    ).run(9999, owner.id, '101_cachekey', 'synologyphotos', 1);
+      'INSERT INTO trip_photos (trip_id, user_id, photo_id, shared) VALUES (?, ?, ?, ?)'
+    ).run(9999, owner.id, tkpSyno35.id, 1);
     testDb.exec('PRAGMA foreign_keys = ON');
 
     const res = await request(app)
@@ -568,7 +592,11 @@ describe('Synology syncSynologyAlbumLink', () => {
     expect(typeof res.body.total).toBe('number');
 
     // Verify photos were inserted into the DB
-    const photos = testDb.prepare('SELECT * FROM trip_photos WHERE trip_id = ? AND user_id = ?').all(trip.id, user.id) as any[];
+    const photos = testDb.prepare(`
+      SELECT tp.*, tkp.provider FROM trip_photos tp
+      JOIN trek_photos tkp ON tkp.id = tp.photo_id
+      WHERE tp.trip_id = ? AND tp.user_id = ?
+    `).all(trip.id, user.id) as any[];
     expect(photos.length).toBeGreaterThan(0);
     expect(photos[0].provider).toBe('synologyphotos');
   });

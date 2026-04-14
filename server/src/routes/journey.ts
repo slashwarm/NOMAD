@@ -64,14 +64,14 @@ router.get('/available-trips', authenticate, (req: Request, res: Response) => {
 
 router.patch('/entries/:entryId', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-  const result = svc.updateEntry(Number(req.params.entryId), authReq.user.id, req.body || {});
+  const result = svc.updateEntry(Number(req.params.entryId), authReq.user.id, req.body || {}, req.headers['x-socket-id'] as string);
   if (!result) return res.status(404).json({ error: 'Entry not found' });
   res.json(result);
 });
 
 router.delete('/entries/:entryId', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-  if (!svc.deleteEntry(Number(req.params.entryId), authReq.user.id)) {
+  if (!svc.deleteEntry(Number(req.params.entryId), authReq.user.id, req.headers['x-socket-id'] as string)) {
     return res.status(404).json({ error: 'Entry not found' });
   }
   res.json({ success: true });
@@ -115,7 +115,19 @@ router.post('/entries/:entryId/photos', authenticate, upload.array('photos', 10)
 
 router.post('/entries/:entryId/provider-photos', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-  const { provider, asset_id, caption } = req.body || {};
+  const { provider, asset_id, asset_ids, caption } = req.body || {};
+
+  // Batch mode: { provider, asset_ids: string[] }
+  if (Array.isArray(asset_ids) && provider) {
+    const added: any[] = [];
+    for (const id of asset_ids) {
+      const photo = svc.addProviderPhoto(Number(req.params.entryId), authReq.user.id, provider, String(id), caption);
+      if (photo) added.push(photo);
+    }
+    return res.status(201).json({ photos: added, added: added.length });
+  }
+
+  // Single mode (backward compat)
   if (!provider || !asset_id) return res.status(400).json({ error: 'provider and asset_id required' });
   const photo = svc.addProviderPhoto(Number(req.params.entryId), authReq.user.id, provider, asset_id, caption);
   if (!photo) return res.status(403).json({ error: 'Not allowed or duplicate' });
@@ -233,7 +245,7 @@ router.post('/:id/entries', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { entry_date } = req.body || {};
   if (!entry_date) return res.status(400).json({ error: 'entry_date is required' });
-  const entry = svc.createEntry(Number(req.params.id), authReq.user.id, req.body);
+  const entry = svc.createEntry(Number(req.params.id), authReq.user.id, req.body, req.headers['x-socket-id'] as string);
   if (!entry) return res.status(404).json({ error: 'Journey not found' });
   res.status(201).json(entry);
 });
@@ -265,6 +277,15 @@ router.delete('/:id/contributors/:userId', authenticate, (req: Request, res: Res
     return res.status(403).json({ error: 'Not allowed' });
   }
   res.json({ success: true });
+});
+
+// ── User Preferences ─────────────────────────────────────────────────────
+
+router.patch('/:id/preferences', authenticate, (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+  const result = svc.updateJourneyPreferences(Number(req.params.id), authReq.user.id, req.body);
+  if (!result) return res.status(403).json({ error: 'Not allowed' });
+  res.json(result);
 });
 
 // ── Share Link ────────────────────────────────────────────────────────────

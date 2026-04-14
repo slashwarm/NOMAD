@@ -149,44 +149,36 @@ export async function browseTimeline(
 export async function searchPhotos(
   userId: number,
   from?: string,
-  to?: string
-): Promise<{ assets?: any[]; error?: string; status?: number }> {
+  to?: string,
+  page: number = 1,
+  size: number = 50,
+): Promise<{ assets?: any[]; hasMore?: boolean; error?: string; status?: number }> {
   const creds = getImmichCredentials(userId);
   if (!creds) return { error: 'Immich not configured', status: 400 };
 
   try {
-    // Paginate through all results (Immich limits per-page to 1000)
-    const allAssets: any[] = [];
-    let page = 1;
-    const pageSize = 1000;
-    while (true) {
-      const resp = await safeFetch(`${creds.immich_url}/api/search/metadata`, {
-        method: 'POST',
-        headers: { 'x-api-key': creds.immich_api_key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          takenAfter: from ? `${from}T00:00:00.000Z` : undefined,
-          takenBefore: to ? `${to}T23:59:59.999Z` : undefined,
-          type: 'IMAGE',
-          size: pageSize,
-          page,
-        }),
-        signal: AbortSignal.timeout(15000) as any,
-      });
-      if (!resp.ok) return { error: 'Search failed', status: resp.status };
-      const data = await resp.json() as { assets?: { items?: any[] } };
-      const items = data.assets?.items || [];
-      allAssets.push(...items);
-      if (items.length < pageSize) break; // Last page
-      page++;
-      if (page > 20) break; // Safety limit (20k photos max)
-    }
-    const assets = allAssets.map((a: any) => ({
+    const resp = await safeFetch(`${creds.immich_url}/api/search/metadata`, {
+      method: 'POST',
+      headers: { 'x-api-key': creds.immich_api_key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        takenAfter: from ? `${from}T00:00:00.000Z` : undefined,
+        takenBefore: to ? `${to}T23:59:59.999Z` : undefined,
+        type: 'IMAGE',
+        size,
+        page,
+      }),
+      signal: AbortSignal.timeout(15000) as any,
+    });
+    if (!resp.ok) return { error: 'Search failed', status: resp.status };
+    const data = await resp.json() as { assets?: { items?: any[] } };
+    const items = data.assets?.items || [];
+    const assets = items.map((a: any) => ({
       id: a.id,
       takenAt: a.fileCreatedAt || a.createdAt,
       city: a.exifInfo?.city || null,
       country: a.exifInfo?.country || null,
     }));
-    return { assets };
+    return { assets, hasMore: items.length >= size };
   } catch {
     return { error: 'Could not reach Immich', status: 502 };
   }
@@ -266,20 +258,62 @@ export async function listAlbums(
   if (!creds) return { error: 'Immich not configured', status: 400 };
 
   try {
-    const resp = await safeFetch(`${creds.immich_url}/api/albums`, {
-      headers: { 'x-api-key': creds.immich_api_key, 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(10000) as any,
+    // Fetch both owned and shared albums
+    const [ownResp, sharedResp] = await Promise.all([
+      safeFetch(`${creds.immich_url}/api/albums`, {
+        headers: { 'x-api-key': creds.immich_api_key, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000) as any,
+      }),
+      safeFetch(`${creds.immich_url}/api/albums?shared=true`, {
+        headers: { 'x-api-key': creds.immich_api_key, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000) as any,
+      }),
+    ]);
+    if (!ownResp.ok) return { error: 'Failed to fetch albums', status: ownResp.status };
+    const ownAlbums = await ownResp.json() as any[];
+    const sharedAlbums = sharedResp.ok ? await sharedResp.json() as any[] : [];
+    const seenIds = new Set<string>();
+    const allAlbums = [...ownAlbums, ...sharedAlbums].filter((a: any) => {
+      if (seenIds.has(a.id)) return false;
+      seenIds.add(a.id);
+      return true;
     });
-    if (!resp.ok) return { error: 'Failed to fetch albums', status: resp.status };
-    const albums = (await resp.json() as any[]).map((a: any) => ({
+    const albums = allAlbums.map((a: any) => ({
       id: a.id,
       albumName: a.albumName,
       assetCount: a.assetCount || 0,
       startDate: a.startDate,
       endDate: a.endDate,
       albumThumbnailAssetId: a.albumThumbnailAssetId,
+      shared: a.shared || a.sharedUsers?.length > 0,
     }));
     return { albums };
+  } catch {
+    return { error: 'Could not reach Immich', status: 502 };
+  }
+}
+
+export async function getAlbumPhotos(
+  userId: number,
+  albumId: string,
+): Promise<{ assets?: any[]; error?: string; status?: number }> {
+  const creds = getImmichCredentials(userId);
+  if (!creds) return { error: 'Immich not configured', status: 400 };
+
+  try {
+    const resp = await safeFetch(`${creds.immich_url}/api/albums/${albumId}`, {
+      headers: { 'x-api-key': creds.immich_api_key, 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(15000) as any,
+    });
+    if (!resp.ok) return { error: 'Failed to fetch album', status: resp.status };
+    const albumData = await resp.json() as { assets?: any[] };
+    const assets = (albumData.assets || []).filter((a: any) => a.type === 'IMAGE').map((a: any) => ({
+      id: a.id,
+      takenAt: a.fileCreatedAt || a.createdAt,
+      city: a.exifInfo?.city || null,
+      country: a.exifInfo?.country || null,
+    }));
+    return { assets };
   } catch {
     return { error: 'Could not reach Immich', status: 502 };
   }

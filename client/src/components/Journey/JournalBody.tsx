@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 
 interface Props {
   text: string
@@ -15,11 +16,11 @@ export default function JournalBody({ text, dark }: Props) {
       color: 'inherit',
     }}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
-          h1: ({ children }) => <h1 style={{ fontFamily: 'inherit', fontSize: '1.3em', fontWeight: 700, margin: '16px 0 6px', lineHeight: 1.3 }}>{children}</h1>,
-          h2: ({ children }) => <h2 style={{ fontFamily: 'inherit', fontSize: '1.15em', fontWeight: 600, margin: '14px 0 4px', lineHeight: 1.3 }}>{children}</h2>,
-          h3: ({ children }) => <h3 style={{ fontFamily: 'inherit', fontSize: '1.05em', fontWeight: 600, margin: '12px 0 4px', lineHeight: 1.4 }}>{children}</h3>,
+          h1: ({ children }) => <p style={{ margin: '0 0 6px' }}>{children}</p>,
+          h2: ({ children }) => <p style={{ margin: '0 0 6px' }}>{children}</p>,
+          h3: ({ children }) => <p style={{ margin: '0 0 6px' }}>{children}</p>,
           p: ({ children }) => <p style={{ margin: '0 0 6px' }}>{children}</p>,
           blockquote: ({ children }) => (
             <blockquote style={{
@@ -62,7 +63,7 @@ export default function JournalBody({ text, dark }: Props) {
           },
         }}
       >
-        {text}
+        {text.replace(/^(.+)\n([-=]{3,})$/gm, '$1\n\n$2')}
       </ReactMarkdown>
     </div>
   )

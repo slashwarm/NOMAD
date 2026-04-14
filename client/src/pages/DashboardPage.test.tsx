@@ -835,8 +835,8 @@ describe('DashboardPage', () => {
         expect(screen.getAllByText('2').length).toBeGreaterThan(0);
       });
 
-      // Duration stat label
-      expect(screen.getAllByText(/duration/i).length).toBeGreaterThan(0);
+      // Days stat label
+      expect(screen.getAllByText(/days/i).length).toBeGreaterThan(0);
       // Places stat label
       expect(screen.getAllByText(/places/i).length).toBeGreaterThan(0);
     });

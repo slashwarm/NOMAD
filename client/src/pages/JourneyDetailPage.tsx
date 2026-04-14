@@ -18,7 +18,7 @@ import {
   Clock, Package, Image, ChevronRight,
   UserPlus, Plus, Minus, Calendar, Camera, BookOpen, X, Check, ImagePlus, Trash2, Pencil,
   Laugh, Smile, Meh, Annoyed, Frown,
-  Sun, CloudSun, Cloud, CloudRain, CloudLightning, Snowflake, ChevronDown,
+  Sun, CloudSun, Cloud, CloudRain, CloudLightning, Snowflake, ChevronDown, Eye, EyeOff,
 } from 'lucide-react'
 import type { JourneyEntry, JourneyPhoto, JourneyDetail } from '../store/journeyStore'
 
@@ -64,20 +64,14 @@ function groupByDate(entries: JourneyEntry[]): Map<string, JourneyEntry[]> {
 function formatDate(d: string): { weekday: string; month: string; day: number } {
   const date = new Date(d + 'T00:00:00')
   return {
-    weekday: date.toLocaleDateString('en', { weekday: 'long' }),
-    month: date.toLocaleDateString('en', { month: 'long' }),
+    weekday: date.toLocaleDateString(undefined, { weekday: 'long' }),
+    month: date.toLocaleDateString(undefined, { month: 'long' }),
     day: date.getDate(),
   }
 }
 
 function photoUrl(p: JourneyPhoto, size: 'thumbnail' | 'original' = 'thumbnail'): string {
-  if (p.provider === 'local') {
-    return `/uploads/${p.file_path}`
-  }
-  // Immich / Synology — stream through the existing memories proxy
-  // tripId=0 is a placeholder, the proxy uses owner_id to find credentials
-  const kind = size === 'thumbnail' ? 'thumbnail' : 'original'
-  return `/api/integrations/memories/${p.provider}/assets/0/${p.asset_id}/${p.owner_id}/${kind}`
+  return `/api/photos/${p.photo_id}/${size}`
 }
 
 export default function JourneyDetailPage() {
@@ -85,7 +79,7 @@ export default function JourneyDetailPage() {
   const navigate = useNavigate()
   const toast = useToast()
   const { t } = useTranslation()
-  const { current, loading, loadJourney, updateEntry, deleteEntry, uploadPhotos, deletePhoto } = useJourneyStore()
+  const { current, loading, notFound, loadJourney, updateEntry, deleteEntry, uploadPhotos, deletePhoto } = useJourneyStore()
   const mapRef = useRef<JourneyMapHandle>(null)
   const fullMapRef = useRef<JourneyMapHandle>(null)
   const [activeLocationId, setActiveLocationId] = useState<string | null>(null)
@@ -98,10 +92,22 @@ export default function JourneyDetailPage() {
   const [showAddTrip, setShowAddTrip] = useState(false)
   const [unlinkTrip, setUnlinkTrip] = useState<{ trip_id: number; title: string } | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [hideSkeletons, setHideSkeletons] = useState(false)
 
   useEffect(() => {
-    if (id) loadJourney(Number(id))
+    if (id) loadJourney(Number(id)).catch(() => {})
   }, [id])
+
+  useEffect(() => {
+    if (current?.hide_skeletons !== undefined) setHideSkeletons(current.hide_skeletons)
+  }, [current?.hide_skeletons])
+
+  useEffect(() => {
+    if (notFound) {
+      toast.error(t('journey.notFound'))
+      navigate('/journey')
+    }
+  }, [notFound])
 
   // WebSocket real-time updates
   useEffect(() => {
@@ -157,6 +163,16 @@ export default function JourneyDetailPage() {
     [current?.entries]
   )
 
+  const sidebarMapItems = useMemo(() => mapEntries.map(e => ({
+    id: String(e.id),
+    lat: e.location_lat!,
+    lng: e.location_lng!,
+    title: e.title || '',
+    mood: e.mood,
+    created_at: e.entry_date,
+    entry_date: e.entry_date,
+  })), [mapEntries])
+
   const tripDates = useMemo(() => {
     const dates = new Set<string>()
     if (!current?.trips) return dates
@@ -182,7 +198,7 @@ export default function JourneyDetailPage() {
     )
   }
 
-  const timelineEntries = current.entries.filter(e => e.title !== 'Gallery' && e.title !== '[Trip Photos]')
+  const timelineEntries = current.entries.filter(e => e.title !== 'Gallery' && e.title !== '[Trip Photos]' && (!hideSkeletons || e.type !== 'skeleton'))
   const dayGroups = groupByDate(timelineEntries)
   const sortedDates = [...dayGroups.keys()].sort()
 
@@ -195,7 +211,7 @@ export default function JourneyDetailPage() {
           {/* Back link — desktop */}
           <button onClick={() => navigate('/journey')} className="hidden md:inline-flex items-center gap-1.5 text-[12px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-4 mx-0">
             <ArrowLeft size={14} />
-            Back to Journey
+            {t('journey.detail.backToJourney')}
           </button>
 
           {/* Hero card — full width */}
@@ -220,7 +236,7 @@ export default function JourneyDetailPage() {
                     )}
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/[0.12] backdrop-blur border border-white/15 rounded-full text-[11px] font-medium">
                       <RefreshCw size={11} />
-                      Synced with Trips
+                      {t('journey.detail.syncedWithTrips')}
                     </div>
                   </div>
                   {/* Mobile: back button on the left */}
@@ -232,7 +248,21 @@ export default function JourneyDetailPage() {
                   </button>
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => { import('../components/PDF/JourneyBookPDF').then(m => m.downloadJourneyBookPDF(current)) }} className="w-[34px] h-[34px] rounded-lg bg-white/15 backdrop-blur flex items-center justify-center hover:bg-white/25"><Download size={14} /></button>
-                    <button onClick={() => setShowSettings(true)} className="w-[34px] h-[34px] rounded-lg bg-white/15 backdrop-blur flex items-center justify-center hover:bg-white/25"><Share2 size={14} /></button>
+                    <div className="relative group">
+                      <button
+                        onClick={async () => {
+                          const next = !hideSkeletons
+                          setHideSkeletons(next)
+                          await journeyApi.updatePreferences(current.id, { hide_skeletons: next })
+                        }}
+                        className={`w-[34px] h-[34px] rounded-lg backdrop-blur flex items-center justify-center ${hideSkeletons ? 'bg-white/30' : 'bg-white/15 hover:bg-white/25'}`}
+                      >
+                        {hideSkeletons ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-[11px] font-medium whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">
+                        {hideSkeletons ? t('journey.skeletons.show') : t('journey.skeletons.hide')}
+                      </span>
+                    </div>
                     <button onClick={() => setShowSettings(true)} className="w-[34px] h-[34px] rounded-lg bg-white/15 backdrop-blur flex items-center justify-center hover:bg-white/25"><MoreHorizontal size={14} /></button>
                   </div>
                 </div>
@@ -326,7 +356,7 @@ export default function JourneyDetailPage() {
                               {dayIdx + 1}
                             </div>
                             <div>
-                              <h3 className="text-[14px] font-semibold text-zinc-900 dark:text-white">{fd.weekday}, {fd.month} {fd.day}</h3>
+                              <h3 className="text-[14px] font-semibold text-zinc-900 dark:text-white">{new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
                             </div>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-zinc-500">
@@ -386,17 +416,9 @@ export default function JourneyDetailPage() {
                 <JourneyMap
                   ref={mapRef}
                   checkins={[]}
-                  entries={mapEntries.map(e => ({
-                    id: String(e.id),
-                    lat: e.location_lat!,
-                    lng: e.location_lng!,
-                    title: e.title || '',
-                    mood: e.mood,
-                    created_at: e.entry_date,
-                    entry_date: e.entry_date,
-                  })) as any}
+                  entries={sidebarMapItems as any}
                   height={240}
-                  onMarkerClick={(id) => handleMarkerClick(id)}
+                  onMarkerClick={handleMarkerClick}
                 />
                 <div className="px-3.5 py-2.5 border-t border-zinc-200 dark:border-zinc-700 flex items-center justify-between text-[11px] text-zinc-500">
                   <span>{mapEntries.length} {t('journey.stats.places')}</span>
@@ -405,17 +427,17 @@ export default function JourneyDetailPage() {
 
               {/* Stats panel */}
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl p-4">
-                <div className="text-[10px] font-semibold tracking-[0.1em] uppercase text-zinc-500 mb-3.5">{t('journey.detail.journeyStats')}</div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="text-[10px] font-semibold tracking-[0.1em] uppercase text-zinc-500 mb-3">{t('journey.detail.journeyStats')}</div>
+                <div className="grid grid-cols-2 gap-2">
                   {[
-                    { value: `${sortedDates.length}`, label: t('journey.stats.days') },
-                    { value: `${current.stats.entries}`, label: t('journey.stats.entries') },
-                    { value: `${current.stats.photos}`, label: t('journey.stats.photos') },
-                    { value: `${current.stats.cities}`, label: t('journey.stats.cities') },
+                    { value: sortedDates.length, label: t('journey.stats.days') },
+                    { value: current.stats.entries, label: t('journey.stats.entries') },
+                    { value: current.stats.photos, label: t('journey.stats.photos') },
+                    { value: current.stats.cities, label: t('journey.stats.cities') },
                   ].map(s => (
-                    <div key={s.label}>
-                      <div className="text-[20px] font-bold tracking-[-0.02em] text-zinc-900 dark:text-white">{s.value}</div>
-                      <div className="text-[10px] uppercase tracking-[0.08em] text-zinc-500 font-medium">{s.label}</div>
+                    <div key={s.label} className="rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-700/50 px-3 py-2.5">
+                      <div className="text-[18px] font-bold tracking-[-0.02em] text-zinc-900 dark:text-white leading-none mb-0.5">{s.value}</div>
+                      <div className="text-[9px] uppercase tracking-[0.1em] text-zinc-400 dark:text-zinc-500 font-semibold">{s.label}</div>
                     </div>
                   ))}
                 </div>
@@ -440,7 +462,7 @@ export default function JourneyDetailPage() {
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium text-zinc-900 dark:text-white truncate">{trip.title}</div>
                         <div className="text-[10px] text-zinc-500 flex items-center gap-1.5">
-                          {trip.place_count || 0} places
+                          {trip.place_count || 0} {t('journey.detail.places')}
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px] font-medium"><span className="w-1 h-1 rounded-full bg-emerald-500" />{t('journey.synced.synced')}</span>
                         </div>
                       </div>
@@ -674,7 +696,7 @@ function MapView({ entries, mapEntries, sortedDates, activeLocationId, fullMapRe
               <div key={date}>
                 {/* Day separator */}
                 <div className="flex items-center gap-2.5 py-3">
-                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 tracking-[0.12em] uppercase">Day {dayIdx + 1}</span>
+                  <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 tracking-[0.12em] uppercase">{t('journey.detail.day', { number: dayIdx + 1 })}</span>
                   <span className="text-[10px] text-zinc-400 font-medium">{fd.month} {fd.day}</span>
                   <div className="flex-1 h-px bg-zinc-200 dark:bg-zinc-700" />
                 </div>
@@ -750,6 +772,7 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
   const [showPicker, setShowPicker] = useState(false)
   const [pickerProvider, setPickerProvider] = useState<string | null>(null)
   const [availableProviders, setAvailableProviders] = useState<{ id: string; name: string }[]>([])
+  const [galleryUploading, setGalleryUploading] = useState(false)
   const toast = useToast()
 
   // check which providers are enabled AND connected for the current user
@@ -794,37 +817,50 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
   const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files?.length) return
-    // find existing "Gallery" entry or create one
-    let galleryEntry = entries.find(e => e.title === 'Gallery' && e.type === 'entry')
-    let entryId = galleryEntry?.id
-    if (!entryId) {
-      try {
+    setGalleryUploading(true)
+    try {
+      // find existing "Gallery" entry or create one
+      let galleryEntry = entries.find(e => e.title === 'Gallery' && e.type === 'entry')
+      let entryId = galleryEntry?.id
+      if (!entryId) {
         const entry = await journeyApi.createEntry(journeyId, {
           title: t('journey.share.gallery'),
           entry_date: new Date().toISOString().split('T')[0],
           type: 'entry',
         })
         entryId = entry.id
-      } catch { return }
-    }
-    const formData = new FormData()
-    for (const f of files) formData.append('photos', f)
-    try {
+      }
+      const formData = new FormData()
+      for (const f of files) formData.append('photos', f)
       await journeyApi.uploadPhotos(entryId, formData)
       toast.success(t('journey.photosUploaded', { count: files.length }))
       onRefresh()
     } catch {
       toast.error(t('journey.settings.coverFailed'))
+    } finally {
+      setGalleryUploading(false)
     }
     e.target.value = ''
   }
 
   const handleDeletePhoto = async (photoId: number) => {
+    // Optimistic update — remove photo from local state immediately
+    const store = useJourneyStore.getState()
+    if (store.current) {
+      const updated = {
+        ...store.current,
+        entries: store.current.entries.map(e => ({
+          ...e,
+          photos: e.photos.filter(p => p.id !== photoId),
+        })).filter(e => e.type !== 'entry' || e.title !== 'Gallery' || e.photos.length > 0 || e.story),
+      }
+      useJourneyStore.setState({ current: updated })
+    }
     try {
       await journeyApi.deletePhoto(photoId)
-      onRefresh()
     } catch {
       toast.error(t('common.error'))
+      onRefresh() // Revert on error
     }
   }
 
@@ -834,14 +870,20 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <span className="text-[11px] text-zinc-500">{allPhotos.length} photos</span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+          <Camera size={10} /> {allPhotos.length} {t('journey.detail.photos')}
+        </span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => galleryFileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[11px] font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100"
+            disabled={galleryUploading}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[11px] font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-50"
           >
-            <Plus size={12} />
-            Upload
+            {galleryUploading ? (
+              <><div className="w-3 h-3 border-2 border-white/30 dark:border-zinc-900/30 border-t-white dark:border-t-zinc-900 rounded-full animate-spin" /> {t('journey.editor.uploading')}</>
+            ) : (
+              <><Plus size={12} /> {t('common.upload')}</>
+            )}
           </button>
           {availableProviders.map(p => (
             <button
@@ -873,7 +915,7 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
               onClick={() => onPhotoClick(entry.photos, entry.photos.indexOf(photo))}
             >
               <img
-                src={photo.provider !== 'local' ? photoUrl(photo, 'original') : photoUrl(photo)}
+                src={photoUrl(photo, 'thumbnail')}
                 alt={photo.caption || ''}
                 className="w-full h-full object-cover transition-transform group-hover:scale-105"
                 loading="lazy"
@@ -886,11 +928,11 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
               >
                 <X size={12} />
               </button>
-              {photo.provider !== 'local' && (
+              {photo.provider && photo.provider !== 'local' && (
                 <div className="absolute top-1.5 left-1.5">
                   <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-black/70 backdrop-blur text-white flex items-center gap-1">
                     <RefreshCw size={7} />
-                    {photo.provider === 'immich' ? 'Immich' : 'Synology'}
+                    {photo.provider === 'immich' ? 'Immich' : photo.provider === 'synology' ? 'Synology' : photo.provider}
                   </span>
                 </div>
               )}
@@ -901,7 +943,7 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
               )}
               <div className="absolute bottom-1.5 left-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-black/50 backdrop-blur text-white">
-                  {entry.entry_date}
+                  {new Date(entry.entry_date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                 </span>
               </div>
             </div>
@@ -931,12 +973,10 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
               } catch { return }
             }
             let added = 0
-            for (const assetId of assetIds) {
-              try {
-                await journeyApi.addProviderPhoto(targetId, pickerProvider!, assetId)
-                added++
-              } catch {}
-            }
+            try {
+              const result = await journeyApi.addProviderPhotos(targetId, pickerProvider!, assetIds)
+              added = result.added || 0
+            } catch {}
             if (added > 0) {
               toast.success(t('journey.photosAdded', { count: added }))
               onRefresh()
@@ -952,6 +992,7 @@ function GalleryView({ entries, journeyId, userId, trips, onPhotoClick, onRefres
 // ── Expandable Story ─────────────────────────────────────────────────────
 
 function ExpandableStory({ story }: { story: string }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [clamped, setClamped] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -977,16 +1018,24 @@ function ExpandableStory({ story }: { story: string }) {
         onClick={() => { if (clamped || expanded) setExpanded(e => !e) }}
         className={`text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed ${
           expanded ? '' : 'line-clamp-3 md:line-clamp-[9]'
-        } ${clamped || expanded ? 'cursor-pointer md:cursor-auto' : ''}`}
+        } ${clamped || expanded ? 'cursor-pointer' : ''}`}
       >
         <JournalBody text={story} />
       </div>
       {clamped && !expanded && (
         <button
           onClick={() => setExpanded(true)}
-          className="md:hidden mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] font-medium text-zinc-500 dark:text-zinc-400 active:scale-95 transition-transform"
+          className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] font-medium text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-95 transition-all"
         >
-          Read more <ChevronRight size={10} />
+          {t('common.showMore')} <ChevronRight size={10} />
+        </button>
+      )}
+      {expanded && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[10px] font-medium text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-95 transition-all"
+        >
+          {t('common.showLess')} <ChevronRight size={10} className="rotate-[-90deg]" />
         </button>
       )}
     </div>
@@ -1008,7 +1057,7 @@ function VerdictSection({ pros, cons }: { pros: string[]; cons: string[] }) {
       >
         <div className="flex-1 h-px bg-zinc-200 dark:bg-zinc-700" />
         <span className="text-[10px] font-bold tracking-[0.14em] uppercase text-zinc-400 flex items-center gap-1.5">
-          Pros & Cons
+          {t('journey.editor.prosCons')}
           <ChevronDown
             size={12}
             className={`md:hidden text-zinc-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`}
@@ -1046,12 +1095,12 @@ function VerdictSection({ pros, cons }: { pros: string[]; cons: string[] }) {
         }`}
       >
         {pros.length > 0 && (
-          <div className="rounded-xl border border-green-200 dark:border-green-800/30 p-4" style={{ background: 'linear-gradient(180deg, #F0FDF4 0%, white 100%)' }}>
+          <div className="rounded-xl border border-green-200 dark:border-green-800/30 p-4 bg-gradient-to-b from-green-50 to-white dark:from-green-950/30 dark:to-zinc-900">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-6 h-6 rounded-lg bg-green-500 flex items-center justify-center">
                 <Check size={14} className="text-white" strokeWidth={3} />
               </div>
-              <span className="hidden md:inline text-[11px] font-bold tracking-[0.1em] uppercase text-green-700">{t('journey.verdict.lovedIt')}</span>
+              <span className="hidden md:inline text-[11px] font-bold tracking-[0.1em] uppercase text-green-700 dark:text-green-400">{t('journey.verdict.lovedIt')}</span>
               <span className="ml-auto text-[11px] font-semibold text-green-600">{pros.length}</span>
             </div>
             <div className="flex flex-col gap-2">
@@ -1065,12 +1114,12 @@ function VerdictSection({ pros, cons }: { pros: string[]; cons: string[] }) {
           </div>
         )}
         {cons.length > 0 && (
-          <div className="rounded-xl border border-red-200 dark:border-red-800/30 p-4" style={{ background: 'linear-gradient(180deg, #FEF2F2 0%, white 100%)' }}>
+          <div className="rounded-xl border border-red-200 dark:border-red-800/30 p-4 bg-gradient-to-b from-red-50 to-white dark:from-red-950/30 dark:to-zinc-900">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-6 h-6 rounded-lg bg-red-500 flex items-center justify-center">
                 <Minus size={14} className="text-white" strokeWidth={3} />
               </div>
-              <span className="hidden md:inline text-[11px] font-bold tracking-[0.1em] uppercase text-red-700">{t('journey.verdict.couldBeBetter')}</span>
+              <span className="hidden md:inline text-[11px] font-bold tracking-[0.1em] uppercase text-red-700 dark:text-red-400">{t('journey.verdict.couldBeBetter')}</span>
               <span className="ml-auto text-[11px] font-semibold text-red-600">{cons.length}</span>
             </div>
             <div className="flex flex-col gap-2">
@@ -1272,7 +1321,7 @@ function CheckinCard({ entry, onClick }: { entry: JourneyEntry; onClick: () => v
 }
 
 function PhotoImg({ photo, className, style, onClick }: { photo: JourneyPhoto; className?: string; style?: React.CSSProperties; onClick?: () => void }) {
-  const src = photo.provider !== 'local' ? photoUrl(photo, 'original') : photoUrl(photo)
+  const src = photoUrl(photo, 'thumbnail')
   return (
     <img
       src={src}
@@ -1356,6 +1405,24 @@ function WeatherChip({ weather }: { weather: string }) {
   )
 }
 
+// ── Scroll Trigger ───────────────────────────────────────────────────────
+
+function ScrollTrigger({ onVisible, loading }: { onVisible: () => void; loading: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(([entry]) => { if (entry.isIntersecting && !loading) onVisible() }, { rootMargin: '200px' })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [onVisible, loading])
+  return (
+    <div ref={ref} className="flex justify-center py-4 mt-2">
+      <div className="w-5 h-5 border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-600 dark:border-t-white rounded-full animate-spin" />
+    </div>
+  )
+}
+
 // ── Provider Picker ───────────────────────────────────────────────────────
 
 function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, onClose, onAdd }: {
@@ -1368,16 +1435,23 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
   onAdd: (assetIds: string[], entryId: number | null) => Promise<void>
 }) {
   const { t } = useTranslation()
-  const [filter, setFilter] = useState<'trip' | 'custom' | 'album'>('trip')
+  const [filter, setFilter] = useState<'trip' | 'custom' | 'all' | 'album'>('trip')
   const [photos, setPhotos] = useState<any[]>([])
   const [albums, setAlbums] = useState<any[]>([])
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [searchPage, setSearchPage] = useState(1)
+  const [searchFrom, setSearchFrom] = useState('')
+  const [searchTo, setSearchTo] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [targetEntryId, setTargetEntryId] = useState<number | null>(null)
   const [addToOpen, setAddToOpen] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   // compute trip range
   const tripRange = useMemo(() => {
@@ -1389,17 +1463,53 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
     return { from, to }
   }, [trips])
 
-  const searchPhotos = async (from: string, to: string) => {
-    setLoading(true)
+  const cancelPending = () => {
+    if (abortRef.current) { abortRef.current.abort() }
+    abortRef.current = new AbortController()
+    return abortRef.current.signal
+  }
+
+  const searchPhotos = async (from: string, to: string, page: number = 1, append: boolean = false) => {
+    const signal = cancelPending()
+    if (page === 1) { setLoading(true); setPhotos([]) } else { setLoadingMore(true) }
+    setSearchFrom(from)
+    setSearchTo(to)
+    setSearchPage(page)
     try {
       const res = await fetch(`/api/integrations/memories/${provider}/search`, {
-        method: 'POST', credentials: 'include',
+        method: 'POST', credentials: 'include', signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to }),
+        body: JSON.stringify({ from, to, page, size: 50 }),
       })
+      if (res.ok) {
+        const data = await res.json()
+        const assets = data.assets || []
+        setPhotos(prev => append ? [...prev, ...assets] : assets)
+        setHasMore(!!data.hasMore)
+      } else {
+        setHasMore(false)
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') setHasMore(false)
+    }
+    if (!signal.aborted) { setLoading(false); setLoadingMore(false) }
+  }
+
+  const loadMorePhotos = () => {
+    if (loadingMore || !hasMore) return
+    searchPhotos(searchFrom, searchTo, searchPage + 1, true)
+  }
+
+  const loadAlbumPhotos = async (albumId: string) => {
+    const signal = cancelPending()
+    setLoading(true)
+    setPhotos([])
+    setHasMore(false)
+    try {
+      const res = await fetch(`/api/integrations/memories/${provider}/albums/${albumId}/photos`, { credentials: 'include', signal })
       if (res.ok) setPhotos((await res.json()).assets || [])
-    } catch {}
-    setLoading(false)
+    } catch (e: any) { if (e.name !== 'AbortError') {} }
+    if (!signal.aborted) setLoading(false)
   }
 
   const loadAlbums = async () => {
@@ -1413,6 +1523,8 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
   useEffect(() => {
     if (filter === 'trip' && tripRange.from && tripRange.to) {
       searchPhotos(tripRange.from, tripRange.to)
+    } else if (filter === 'all') {
+      searchPhotos('', '')
     } else if (filter === 'album' && albums.length === 0) {
       loadAlbums()
     }
@@ -1432,7 +1544,7 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
 
   const targetLabel = targetEntryId
     ? entries.find(e => e.id === targetEntryId)?.title || entries.find(e => e.id === targetEntryId)?.entry_date || t('journey.stats.entries')
-    : 'Gallery'
+    : t('journey.picker.newGallery')
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-5" style={{ background: 'rgba(9,9,11,0.6)', backdropFilter: 'blur(6px)' }}>
@@ -1453,9 +1565,10 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
           {/* Tabs */}
           <div className="flex gap-1.5 mb-3">
             {[
-              { id: 'trip' as const, label: t('journey.trips.link') },
-              { id: 'custom' as const, label: t('common.edit') },
-              { id: 'album' as const, label: t('journey.share.gallery') },
+              { id: 'trip' as const, label: t('journey.picker.tripPeriod') },
+              { id: 'custom' as const, label: t('journey.picker.dateRange') },
+              { id: 'all' as const, label: t('journey.picker.allPhotos') },
+              { id: 'album' as const, label: t('journey.picker.albums') },
             ].map(f => (
               <button
                 key={f.id}
@@ -1479,11 +1592,11 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                   <>
                     <Calendar size={13} className="text-zinc-400" />
                     <span className="font-medium text-zinc-900 dark:text-white">
-                      {new Date(tripRange.from + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                      {new Date(tripRange.from + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </span>
                     <span className="text-zinc-400">&mdash;</span>
                     <span className="font-medium text-zinc-900 dark:text-white">
-                      {new Date(tripRange.to + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {new Date(tripRange.to + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                     </span>
                     <span className="ml-1 text-zinc-400">
                       ({Math.ceil((new Date(tripRange.to).getTime() - new Date(tripRange.from).getTime()) / 86400000) + 1} days)
@@ -1502,7 +1615,7 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                 <div className="flex-1"><DatePicker value={customTo} onChange={setCustomTo} /></div>
                 <button onClick={handleCustomSearch}
                   className="px-3 py-1.5 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[12px] font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100 flex-shrink-0">
-                  Search
+                  {t('journey.picker.search')}
                 </button>
               </div>
             )}
@@ -1512,7 +1625,7 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                 {albums.map((a: any) => (
                   <button
                     key={a.id}
-                    onClick={() => { setSelectedAlbum(a.id); searchPhotos(a.startDate || '2000-01-01', a.endDate || '2099-01-01') }}
+                    onClick={() => { setSelectedAlbum(a.id); loadAlbumPhotos(a.id) }}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap flex-shrink-0 border ${
                       selectedAlbum === a.id
                         ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
@@ -1522,16 +1635,16 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                     {a.albumName || a.name || 'Album'}{a.assetCount != null ? ` (${a.assetCount})` : ''}
                   </button>
                 ))}
-                {albums.length === 0 && !loading && <span className="text-[12px] text-zinc-400">No albums found</span>}
+                {albums.length === 0 && !loading && <span className="text-[12px] text-zinc-400">{t('journey.picker.noAlbums')}</span>}
               </div>
             )}
           </div>
         </div>
 
-        {/* Add-to */}
+        {/* Add-to entry selector */}
         <div className="px-6 py-2.5 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
           <div className="relative flex items-center gap-2">
-            <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-zinc-500">Add to</span>
+            <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-zinc-500">{t('journey.picker.addTo')}</span>
             <button
               onClick={() => setAddToOpen(!addToOpen)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-[12px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
@@ -1552,10 +1665,12 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                     }`}
                   >
                     <Camera size={12} />
-                    Gallery
+                    {t('journey.picker.newGallery')}
                   </button>
-                  <div className="h-px bg-zinc-200 dark:bg-zinc-700 my-1" />
-                  {entries.map(e => (
+                  {entries.filter(e => e.type !== 'skeleton' && e.title !== 'Gallery' && e.title !== '[Trip Photos]').length > 0 && (
+                    <div className="h-px bg-zinc-200 dark:bg-zinc-700 my-1" />
+                  )}
+                  {entries.filter(e => e.type !== 'skeleton' && e.title !== 'Gallery' && e.title !== '[Trip Photos]').map(e => (
                     <button
                       key={e.id}
                       onClick={() => { setTargetEntryId(e.id); setAddToOpen(false) }}
@@ -1565,7 +1680,7 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                           : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                       }`}
                     >
-                      {e.title || e.location_name || e.entry_date}
+                      {e.title || e.location_name || new Date(e.entry_date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                     </button>
                   ))}
                 </div>
@@ -1573,6 +1688,36 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
             )}
           </div>
         </div>
+
+        {/* Select all bar — sticky above grid */}
+        {!loading && photos.length > 0 && (() => {
+          const selectable = photos.filter((a: any) => !existingAssetIds.has(a.id))
+          const allSelected = selectable.length > 0 && selectable.every((a: any) => selected.has(a.id))
+          if (selectable.length === 0) return null
+          return (
+            <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+              <button
+                onClick={() => {
+                  if (allSelected) {
+                    setSelected(new Set())
+                  } else {
+                    setSelected(new Set(selectable.map((a: any) => a.id)))
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+              >
+                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                  allSelected
+                    ? 'bg-zinc-900 dark:bg-white border-zinc-900 dark:border-white'
+                    : 'border-zinc-300 dark:border-zinc-600'
+                }`}>
+                  {allSelected && <Check size={9} className="text-white dark:text-zinc-900" strokeWidth={3} />}
+                </div>
+                {allSelected ? t('journey.picker.deselectAll') : t('journey.picker.selectAll')} ({selectable.length})
+              </button>
+            </div>
+          )
+        })()}
 
         {/* Photo grid */}
         <div className="flex-1 overflow-y-auto p-4">
@@ -1632,25 +1777,28 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
                   </div>
                 )
               })}
+              {/* Infinite scroll trigger */}
+              {hasMore && !selectedAlbum && <ScrollTrigger onVisible={loadMorePhotos} loading={loadingMore} />}
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
-          <span className="text-[12px] text-zinc-500">
-            <strong className="text-zinc-900 dark:text-white">{selected.size}</strong> selected
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-200/60 dark:bg-zinc-700/60 text-[11px] leading-none text-zinc-500 dark:text-zinc-400">
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[10px] leading-none font-bold">{selected.size}</span>
+            <span className="leading-[18px]">{t('journey.picker.selected')}</span>
           </span>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 text-[13px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700">
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               onClick={() => onAdd([...selected], targetEntryId)}
               disabled={selected.size === 0}
               className="px-3.5 py-2 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[13px] font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Add {selected.size > 0 ? `(${selected.size})` : ''}
+              {t('common.add')} {selected.size > 0 ? `(${selected.size})` : ''}
             </button>
           </div>
         </div>
@@ -1666,6 +1814,7 @@ function DatePicker({ value, onChange, tripDates }: {
   onChange: (date: string) => void
   tripDates?: Set<string>
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [viewMonth, setViewMonth] = useState(() => {
     const d = value ? new Date(value + 'T00:00:00') : new Date()
@@ -1674,7 +1823,7 @@ function DatePicker({ value, onChange, tripDates }: {
 
   const daysInMonth = new Date(viewMonth.year, viewMonth.month + 1, 0).getDate()
   const firstDow = new Date(viewMonth.year, viewMonth.month, 1).getDay()
-  const monthName = new Date(viewMonth.year, viewMonth.month).toLocaleDateString('en', { month: 'long', year: 'numeric' })
+  const monthName = new Date(viewMonth.year, viewMonth.month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 
   const prevMonth = () => {
     setViewMonth(p => p.month === 0 ? { year: p.year - 1, month: 11 } : { ...p, month: p.month - 1 })
@@ -1689,7 +1838,7 @@ function DatePicker({ value, onChange, tripDates }: {
   for (let i = 0; i < firstDow; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
 
-  const formatted = value ? new Date(value + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select date'
+  const formatted = value ? new Date(value + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : t('journey.picker.selectDate')
 
   return (
     <div className="relative">
@@ -1719,8 +1868,8 @@ function DatePicker({ value, onChange, tripDates }: {
 
             {/* Weekday headers */}
             <div className="grid grid-cols-7 mb-1">
-              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                <div key={d} className="text-center text-[10px] font-medium text-zinc-400 py-1">{d}</div>
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
+                <div key={i} className="text-center text-[10px] font-medium text-zinc-400 py-1">{d}</div>
               ))}
             </div>
 
@@ -1789,6 +1938,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
   const [pros, setPros] = useState<string[]>(entry.pros_cons?.pros?.length ? entry.pros_cons.pros : [''])
   const [cons, setCons] = useState<string[]>(entry.pros_cons?.cons?.length ? entry.pros_cons.cons : [''])
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [photos, setPhotos] = useState<JourneyPhoto[]>(entry.photos || [])
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [pendingLinkIds, setPendingLinkIds] = useState<number[]>([])
@@ -1837,10 +1987,15 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
       // queue files for upload after save
       setPendingFiles(prev => [...prev, ...Array.from(files)])
     } else {
-      const formData = new FormData()
-      for (const f of files) formData.append('photos', f)
-      const newPhotos = await onUploadPhotos(entry.id, formData)
-      if (newPhotos?.length) setPhotos(prev => [...prev, ...newPhotos])
+      setUploading(true)
+      try {
+        const formData = new FormData()
+        for (const f of files) formData.append('photos', f)
+        const newPhotos = await onUploadPhotos(entry.id, formData)
+        if (newPhotos?.length) setPhotos(prev => [...prev, ...newPhotos])
+      } finally {
+        setUploading(false)
+      }
     }
   }
 
@@ -1868,9 +2023,14 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
             <div className="flex gap-2">
               <button
                 onClick={() => fileRef.current?.click()}
-                className="flex-1 border border-dashed border-zinc-200 dark:border-zinc-700 rounded-lg py-4 text-[12px] text-zinc-500 hover:border-zinc-400 dark:hover:border-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center justify-center gap-1.5"
+                disabled={uploading}
+                className="flex-1 border border-dashed border-zinc-200 dark:border-zinc-700 rounded-lg py-4 text-[12px] text-zinc-500 hover:border-zinc-400 dark:hover:border-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
-                <Plus size={13} /> Upload photos
+                {uploading ? (
+                  <><div className="w-3.5 h-3.5 border-2 border-zinc-300 border-t-zinc-600 rounded-full animate-spin" /> {t('journey.editor.uploading')}</>
+                ) : (
+                  <><Plus size={13} /> {t('journey.editor.uploadPhotos')}</>
+                )}
               </button>
               {galleryPhotos.length > 0 && (
                 <button
@@ -1881,7 +2041,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
                       : 'border-dashed border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'
                   }`}
                 >
-                  <Image size={13} /> From Gallery
+                  <Image size={13} /> {t('journey.editor.fromGallery')}
                 </button>
               )}
             </div>
@@ -1906,7 +2066,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
                       }}
                       className="aspect-square rounded-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-zinc-900 dark:hover:ring-white hover:ring-offset-1 dark:hover:ring-offset-zinc-900 transition-all"
                     >
-                      <img src={photoUrl(gp)} alt="" className="w-full h-full object-cover" loading="lazy" onError={e => { if (gp.provider !== 'local') { const img = e.currentTarget; const orig = photoUrl(gp, 'original'); if (!img.src.includes('/original')) img.src = orig } }} />
+                      <img src={photoUrl(gp)} alt="" className="w-full h-full object-cover" loading="lazy" onError={e => { const img = e.currentTarget; const orig = photoUrl(gp, 'original'); if (!img.src.includes('/original')) img.src = orig }} />
                     </div>
                   ))}
                   {galleryPhotos.filter(gp => !photos.some(p => p.id === gp.id)).length === 0 && (
@@ -1920,7 +2080,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
                 <div className="flex flex-wrap gap-2">
                   {photos.map((p, idx) => (
                     <div key={p.id} className={`w-20 h-20 rounded-lg overflow-hidden relative group ${idx === 0 && photos.length > 1 ? 'ring-2 ring-zinc-900 dark:ring-white ring-offset-1 dark:ring-offset-zinc-900' : ''}`}>
-                      <img src={photoUrl(p)} className="w-full h-full object-cover" alt="" onError={e => { if (p.provider !== 'local') { const img = e.currentTarget; const orig = photoUrl(p, 'original'); if (!img.src.includes('/original')) img.src = orig } }} />
+                      <img src={photoUrl(p)} className="w-full h-full object-cover" alt="" onError={e => { const img = e.currentTarget; const orig = photoUrl(p, 'original'); if (!img.src.includes('/original')) img.src = orig }} />
                       {idx === 0 && photos.length > 1 && (
                         <span className="absolute bottom-0.5 left-0.5 px-1 py-px rounded text-[8px] font-bold bg-zinc-900/70 text-white">{t('journey.editor.photoFirst')}</span>
                       )}
@@ -1938,7 +2098,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
                           }}
                           className="absolute bottom-0.5 left-0.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[8px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity"
                         >
-                          Make 1st
+                          {t('journey.editor.makeFirst')}
                         </button>
                       )}
                       <button
@@ -2017,7 +2177,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
                     onClick={() => setPros([...pros, ''])}
                     className="flex items-center justify-center gap-1.5 h-9 w-full border border-dashed border-green-200 dark:border-green-800/40 rounded-[10px] text-[12px] font-medium text-green-700 dark:text-green-400 hover:border-green-300 dark:hover:border-green-700 transition-colors"
                   >
-                    <Plus size={13} strokeWidth={2.5} /> Add another
+                    <Plus size={13} strokeWidth={2.5} /> {t('journey.editor.addAnother')}
                   </button>
                 </div>
               </div>
@@ -2051,7 +2211,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
                     onClick={() => setCons([...cons, ''])}
                     className="flex items-center justify-center gap-1.5 h-9 w-full border border-dashed border-red-200 dark:border-red-800/40 rounded-[10px] text-[12px] font-medium text-red-700 dark:text-red-400 hover:border-red-300 dark:hover:border-red-700 transition-colors"
                   >
-                    <Plus size={13} strokeWidth={2.5} /> Add another
+                    <Plus size={13} strokeWidth={2.5} /> {t('journey.editor.addAnother')}
                   </button>
                 </div>
               </div>
@@ -2129,7 +2289,7 @@ function EntryEditor({ entry, journeyId, tripDates, galleryPhotos, onClose, onSa
               )}
               {locationSearching && (
                 <div className="absolute left-0 right-0 top-full mt-1 z-[100] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-lg px-3 py-3 text-center text-[12px] text-zinc-400">
-                  Searching...
+                  {t('journey.editor.searching')}
                 </div>
               )}
             </div>
@@ -2203,11 +2363,11 @@ function AddTripDialog({ journeyId, existingTripIds, onClose, onAdded }: {
     journeyApi.availableTrips().then(d => setTrips(d.trips || [])).catch(() => {})
   }, [])
 
-  const filtered = trips.filter(t => {
-    if (existingTripIds.includes(t.id)) return false
+  const filtered = trips.filter(trip => {
+    if (existingTripIds.includes(trip.id)) return false
     if (!search) return true
     const q = search.toLowerCase()
-    return t.title.toLowerCase().includes(q) || (t.destination || '').toLowerCase().includes(q)
+    return trip.title.toLowerCase().includes(q) || (trip.destination || '').toLowerCase().includes(q)
   })
 
   const handleAdd = async (tripId: number) => {
@@ -2249,26 +2409,26 @@ function AddTripDialog({ journeyId, existingTripIds, onClose, onAdded }: {
             {filtered.length === 0 && (
               <p className="text-[12px] text-zinc-400 text-center py-4">{t('journey.trips.noTripsAvailable')}</p>
             )}
-            {filtered.map(t => (
+            {filtered.map(trip => (
               <div
-                key={t.id}
+                key={trip.id}
                 className="flex items-center gap-2.5 p-2.5 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-transparent"
               >
-                <div className="w-9 h-9 rounded-md flex-shrink-0" style={{ background: pickGradient(t.id) }} />
+                <div className="w-9 h-9 rounded-md flex-shrink-0" style={{ background: pickGradient(trip.id) }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-zinc-900 dark:text-white truncate">{t.title}</div>
-                  {(t.destination || t.start_date) && (
+                  <div className="text-[13px] font-medium text-zinc-900 dark:text-white truncate">{trip.title}</div>
+                  {(trip.destination || trip.start_date) && (
                     <div className="text-[11px] text-zinc-500 truncate">
-                      {t.destination}{t.destination && t.start_date ? ' · ' : ''}{t.start_date}
+                      {trip.destination}{trip.destination && trip.start_date ? ' · ' : ''}{trip.start_date}
                     </div>
                   )}
                 </div>
                 <button
-                  onClick={() => handleAdd(t.id)}
-                  disabled={adding === t.id}
+                  onClick={() => handleAdd(trip.id)}
+                  disabled={adding === trip.id}
                   className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-50"
                 >
-                  {adding === t.id ? '...' : 'Link'}
+                  {adding === trip.id ? '...' : t('journey.trips.link')}
                 </button>
               </div>
             ))}
@@ -2376,19 +2536,19 @@ function ContributorInviteDialog({ journeyId, existingUserIds, onClose, onInvite
 
           {/* Role selector */}
           <div>
-            <label className="text-[10px] font-semibold tracking-[0.12em] uppercase text-zinc-500 block mb-2">Role</label>
+            <label className="text-[10px] font-semibold tracking-[0.12em] uppercase text-zinc-500 block mb-2">{t('journey.invite.role')}</label>
             <div className="flex gap-2">
               {(['viewer', 'editor'] as const).map(r => (
                 <button
                   key={r}
                   onClick={() => setRole(r)}
-                  className={`flex-1 py-2 rounded-lg text-[12px] font-medium border transition-all capitalize ${
+                  className={`flex-1 py-2 rounded-lg text-[12px] font-medium border transition-all ${
                     role === r
                       ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white'
                       : 'border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-zinc-400'
                   }`}
                 >
-                  {r}
+                  {t(`journey.invite.${r}`)}
                 </button>
               ))}
             </div>
@@ -2397,14 +2557,14 @@ function ContributorInviteDialog({ journeyId, existingUserIds, onClose, onInvite
 
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
           <button onClick={onClose} className="px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 text-[13px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700">
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleInvite}
             disabled={!selectedUserId || sending}
             className="px-3.5 py-2 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[13px] font-medium hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {sending ? 'Inviting...' : 'Invite'}
+            {sending ? t('journey.invite.inviting') : t('journey.invite.invite')}
           </button>
         </div>
       </div>
@@ -2471,7 +2631,7 @@ function JourneyShareSection({ journeyId }: { journeyId: number }) {
           onClick={createLink}
           className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 text-[12px] font-medium text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:hover:border-zinc-500 dark:hover:text-zinc-300 transition-colors"
         >
-          <Link size={14} /> Create share link
+          <Link size={14} /> {t('journey.share.createLink')}
         </button>
       ) : (
         <div className="flex flex-col gap-3">
@@ -2483,7 +2643,7 @@ function JourneyShareSection({ journeyId }: { journeyId: number }) {
               onClick={copyLink}
               className="flex-shrink-0 px-2.5 py-1 rounded-md bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-[11px] font-medium hover:bg-zinc-700 dark:hover:bg-zinc-200"
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('journey.share.copied') : t('journey.share.copy')}
             </button>
           </div>
 
@@ -2578,8 +2738,8 @@ function JourneySettingsDialog({ journey, onClose, onSaved, onOpenInvite }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-5" style={{ background: 'rgba(9,9,11,0.6)', backdropFilter: 'blur(6px)' }}>
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.2)] max-w-[480px] w-full max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center md:p-5 overscroll-none" style={{ background: 'rgba(9,9,11,0.6)', backdropFilter: 'blur(6px)' }} onClick={onClose} onTouchMove={e => { if (e.target === e.currentTarget) e.preventDefault() }}>
+      <div className="bg-white dark:bg-zinc-900 rounded-t-2xl md:rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.2)] max-w-[480px] w-full max-h-[85vh] md:max-h-[90vh] flex flex-col overflow-hidden pb-safe" onClick={e => e.stopPropagation()}>
 
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-700">
           <h2 className="text-[16px] font-bold text-zinc-900 dark:text-white">{t('journey.settings.title')}</h2>
@@ -2588,7 +2748,7 @@ function JourneySettingsDialog({ journey, onClose, onSaved, onOpenInvite }: {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 flex flex-col gap-5">
           {/* Cover Image */}
           <div>
             <label className="text-[10px] font-semibold tracking-[0.12em] uppercase text-zinc-500 block mb-2">{t('journey.settings.coverImage')}</label>
@@ -2691,7 +2851,7 @@ function JourneySettingsDialog({ journey, onClose, onSaved, onOpenInvite }: {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-6 py-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
+        <div className="flex items-center gap-2 px-6 py-4 pb-6 md:pb-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="flex items-center gap-1.5 text-[12px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg px-2.5 py-2 mr-auto"
