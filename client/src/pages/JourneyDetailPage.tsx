@@ -1423,6 +1423,24 @@ function ScrollTrigger({ onVisible, loading }: { onVisible: () => void; loading:
   )
 }
 
+// ── Photo date grouping ───────────────────────────────────────────────────
+
+function groupPhotosByDate(photos: any[]): { date: string; label: string; assets: any[] }[] {
+  const map = new Map<string, any[]>()
+  for (const asset of photos) {
+    const key = asset.takenAt ? asset.takenAt.slice(0, 10) : '__unknown__'
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(asset)
+  }
+  return [...map.entries()].map(([date, assets]) => ({
+    date,
+    label: date === '__unknown__'
+      ? 'Unknown date'
+      : new Date(date + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+    assets,
+  }))
+}
+
 // ── Provider Picker ───────────────────────────────────────────────────────
 
 function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, onClose, onAdd }: {
@@ -1732,51 +1750,60 @@ function ProviderPicker({ provider, userId, entries, trips, existingAssetIds, on
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5">
-              {photos.map((asset: any) => {
-                const isSelected = selected.has(asset.id)
-                const alreadyAdded = existingAssetIds.has(asset.id)
-                return (
-                  <div
-                    key={asset.id}
-                    onClick={() => !alreadyAdded && toggleAsset(asset.id)}
-                    className={`relative aspect-square rounded-lg overflow-hidden ${
-                      alreadyAdded
-                        ? 'opacity-40 cursor-not-allowed'
-                        : isSelected
-                          ? 'ring-2 ring-zinc-900 dark:ring-white ring-offset-2 dark:ring-offset-zinc-900 cursor-pointer'
-                          : 'cursor-pointer'
-                    }`}
-                  >
-                    <img
-                      src={`/api/integrations/memories/${provider}/assets/0/${asset.id}/${userId}/thumbnail`}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      onError={e => {
-                        const img = e.currentTarget
-                        const original = `/api/integrations/memories/${provider}/assets/0/${asset.id}/${userId}/original`
-                        if (!img.src.includes('/original')) img.src = original
-                      }}
-                    />
-                    {alreadyAdded && (
-                      <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-zinc-500 text-white flex items-center justify-center">
-                        <Check size={12} />
-                      </div>
-                    )}
-                    {isSelected && !alreadyAdded && (
-                      <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 flex items-center justify-center">
-                        <Check size={12} />
-                      </div>
-                    )}
-                    {asset.city && (
-                      <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/50 to-transparent">
-                        <p className="text-[8px] text-white truncate">{asset.city}</p>
-                      </div>
-                    )}
+            <div>
+              {groupPhotosByDate(photos).map(group => (
+                <div key={group.date}>
+                  <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-2 mt-4 first:mt-0">
+                    {group.label}
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5 mb-1">
+                    {group.assets.map((asset: any) => {
+                      const isSelected = selected.has(asset.id)
+                      const alreadyAdded = existingAssetIds.has(asset.id)
+                      return (
+                        <div
+                          key={asset.id}
+                          onClick={() => !alreadyAdded && toggleAsset(asset.id)}
+                          className={`relative aspect-square rounded-lg overflow-hidden ${
+                            alreadyAdded
+                              ? 'opacity-40 cursor-not-allowed'
+                              : isSelected
+                                ? 'ring-2 ring-zinc-900 dark:ring-white ring-offset-2 dark:ring-offset-zinc-900 cursor-pointer'
+                                : 'cursor-pointer'
+                          }`}
+                        >
+                          <img
+                            src={`/api/integrations/memories/${provider}/assets/0/${asset.id}/${userId}/thumbnail`}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={e => {
+                              const img = e.currentTarget
+                              const original = `/api/integrations/memories/${provider}/assets/0/${asset.id}/${userId}/original`
+                              if (!img.src.includes('/original')) img.src = original
+                            }}
+                          />
+                          {alreadyAdded && (
+                            <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-zinc-500 text-white flex items-center justify-center">
+                              <Check size={12} />
+                            </div>
+                          )}
+                          {isSelected && !alreadyAdded && (
+                            <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 flex items-center justify-center">
+                              <Check size={12} />
+                            </div>
+                          )}
+                          {asset.city && (
+                            <div className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/50 to-transparent">
+                              <p className="text-[8px] text-white truncate">{asset.city}</p>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                )
-              })}
+                </div>
+              ))}
               {/* Infinite scroll trigger */}
               {hasMore && !selectedAlbum && <ScrollTrigger onVisible={loadMorePhotos} loading={loadingMore} />}
             </div>
