@@ -107,7 +107,7 @@ describe('ReservationModal', () => {
     expect(screen.getByRole('button', { name: /Accommodation/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Restaurant/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Train/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Rental Car/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Car$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Cruise/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Event/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Tour/i })).toBeInTheDocument();
@@ -636,7 +636,7 @@ describe('ReservationModal', () => {
 
   it('FE-PLANNER-RESMODAL-045: car type shows date/time section', async () => {
     render(<ReservationModal {...defaultProps} />);
-    await userEvent.click(screen.getByRole('button', { name: /Rental Car/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^Car$/i }));
     // Car type still shows date fields (not hotel which hides them)
     await waitFor(() => {
       expect(screen.getAllByTestId('date-picker').length).toBeGreaterThan(0);

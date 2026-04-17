@@ -730,9 +730,10 @@ interface PackingListPanelProps {
   tripId: number
   items: PackingItem[]
   openImportSignal?: number
+  inlineHeader?: boolean
 }
 
-export default function PackingListPanel({ tripId, items, openImportSignal = 0 }: PackingListPanelProps) {
+export default function PackingListPanel({ tripId, items, openImportSignal = 0, inlineHeader = true }: PackingListPanelProps) {
   const [filter, setFilter] = useState('alle') // 'alle' | 'offen' | 'erledigt'
   const [addingCategory, setAddingCategory] = useState(false)
   const [newCatName, setNewCatName] = useState('')
@@ -1008,14 +1009,34 @@ export default function PackingListPanel({ tripId, items, openImportSignal = 0 }
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', ...font }}>
 
       {/* ── Header ── */}
-      <div style={{ padding: '0 0 16px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
-          {items.length > 0 ? (
-            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-faint)' }}>
-              {t('packing.progress', { packed: abgehakt, total: items.length, percent: fortschritt })}
-            </p>
-          ) : <span />}
+      <div style={{ padding: inlineHeader ? '20px 24px 16px' : '0 0 16px', flexShrink: 0, borderBottom: inlineHeader ? '1px solid rgba(0,0,0,0.06)' : undefined }}>
+        <div style={{ display: 'flex', alignItems: inlineHeader ? 'flex-start' : 'center', justifyContent: 'space-between', gap: 14 }}>
+          {inlineHeader ? (
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{t('packing.title')}</h2>
+              {items.length > 0 && (
+                <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--text-faint)' }}>
+                  {t('packing.progress', { packed: abgehakt, total: items.length, percent: fortschritt })}
+                </p>
+              )}
+            </div>
+          ) : (
+            items.length > 0 ? (
+              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-faint)' }}>
+                {t('packing.progress', { packed: abgehakt, total: items.length, percent: fortschritt })}
+              </p>
+            ) : <span />
+          )}
           <div style={{ display: 'flex', gap: 6 }}>
+            {inlineHeader && canEdit && (
+              <button onClick={() => setShowImportModal(true)} style={{
+                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 99,
+                border: '1px solid var(--border-primary)', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                fontFamily: 'inherit', background: 'var(--bg-card)', color: 'var(--text-muted)',
+              }}>
+                <Upload size={12} /> <span className="hidden sm:inline">{t('packing.import')}</span>
+              </button>
+            )}
             {canEdit && abgehakt > 0 && (
               <button onClick={handleClearChecked} style={{
                 fontSize: 11.5, padding: '5px 10px', borderRadius: 99, border: '1px solid rgba(239,68,68,0.3)',
