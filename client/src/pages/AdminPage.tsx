@@ -20,8 +20,9 @@ import PackingTemplateManager from '../components/Admin/PackingTemplateManager'
 import AuditLogPanel from '../components/Admin/AuditLogPanel'
 import AdminMcpTokensPanel from '../components/Admin/AdminMcpTokensPanel'
 import PermissionsPanel from '../components/Admin/PermissionsPanel'
-import { Users, Map, Briefcase, Shield, Trash2, Edit2, FileText, Eye, EyeOff, Save, CheckCircle, XCircle, Loader2, UserPlus, ArrowUpCircle, ExternalLink, Download, Sun, Link2, Copy, Plus, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Users, Map, Briefcase, Shield, Trash2, Edit2, FileText, Eye, EyeOff, Save, CheckCircle, XCircle, Loader2, UserPlus, ArrowUpCircle, ExternalLink, Download, Sun, Link2, Copy, Plus, RefreshCw, AlertTriangle, SlidersHorizontal, UserCog, Puzzle, Settings as SettingsIcon, Bell, Database, ScrollText, KeyRound, GitBranch, Bug } from 'lucide-react'
 import CustomSelect from '../components/shared/CustomSelect'
+import PageSidebar, { type PageSidebarTab } from '../components/Layout/PageSidebar'
 
 interface AdminUser {
   id: number
@@ -183,18 +184,18 @@ export default function AdminPage(): React.ReactElement {
   const hour12 = useSettingsStore(s => s.settings.time_format) === '12h'
   const mcpEnabled = useAddonStore(s => s.isEnabled('mcp'))
   const devMode = useAuthStore(s => s.devMode)
-  const TABS = [
-    { id: 'users', label: t('admin.tabs.users') },
-    { id: 'config', label: t('admin.tabs.config') },
-    { id: 'defaults', label: t('admin.tabs.defaults') },
-    { id: 'addons', label: t('admin.tabs.addons') },
-    { id: 'settings', label: t('admin.tabs.settings') },
-    { id: 'notifications', label: t('admin.tabs.notifications') },
-    { id: 'backup', label: t('admin.tabs.backup') },
-    { id: 'audit', label: t('admin.tabs.audit') },
-    ...(mcpEnabled ? [{ id: 'mcp-tokens', label: t('admin.tabs.mcpTokens') }] : []),
-    { id: 'github', label: t('admin.tabs.github') },
-    ...(devMode ? [{ id: 'dev-notifications', label: 'Dev: Notifications' }] : []),
+  const TABS: PageSidebarTab[] = [
+    { id: 'users', label: t('admin.tabs.users'), icon: Users },
+    { id: 'config', label: t('admin.tabs.config'), icon: SlidersHorizontal },
+    { id: 'defaults', label: t('admin.tabs.defaults'), icon: UserCog },
+    { id: 'addons', label: t('admin.tabs.addons'), icon: Puzzle },
+    { id: 'settings', label: t('admin.tabs.settings'), icon: SettingsIcon },
+    { id: 'notifications', label: t('admin.tabs.notifications'), icon: Bell },
+    { id: 'backup', label: t('admin.tabs.backup'), icon: Database },
+    { id: 'audit', label: t('admin.tabs.audit'), icon: ScrollText },
+    ...(mcpEnabled ? [{ id: 'mcp-tokens', label: t('admin.tabs.mcpTokens'), icon: KeyRound }] : []),
+    { id: 'github', label: t('admin.tabs.github'), icon: GitBranch },
+    ...(devMode ? [{ id: 'dev-notifications', label: 'Dev: Notifications', icon: Bug }] : []),
   ]
 
   const [activeTab, setActiveTab] = useState<string>('users')
@@ -500,7 +501,7 @@ export default function AdminPage(): React.ReactElement {
       <Navbar />
 
       <div style={{ paddingTop: 'var(--nav-h)' }}>
-        <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
@@ -586,24 +587,15 @@ export default function AdminPage(): React.ReactElement {
             </div>
           )}
 
-          {/* Tabs */}
-          <div className="grid grid-cols-3 sm:flex gap-1 mb-6 rounded-xl p-1" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)' }}>
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab content */}
+          {/* Sidebar layout — nav on the left, active panel on the right */}
+          <PageSidebar
+            sidebarLabel={t('admin.title').toUpperCase()}
+            tabs={TABS}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            footer="admin · self-hosted"
+          >
+            {/* Tab content */}
           {activeTab === 'users' && (
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="p-5 border-b border-slate-100 flex items-center justify-between">
@@ -1618,6 +1610,7 @@ export default function AdminPage(): React.ReactElement {
           {activeTab === 'defaults' && <DefaultUserSettingsTab />}
 
           {activeTab === 'dev-notifications' && <DevNotificationsPanel />}
+          </PageSidebar>
         </div>
       </div>
 
