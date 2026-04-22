@@ -2941,7 +2941,6 @@ function JourneyShareSection({ journeyId }: { journeyId: number }) {
             {[
               { key: 'share_timeline' as const, label: t('journey.share.timeline'), icon: List },
               { key: 'share_gallery' as const, label: t('journey.share.gallery'), icon: Grid },
-              { key: 'share_map' as const, label: t('journey.share.map'), icon: MapPin },
             ].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}

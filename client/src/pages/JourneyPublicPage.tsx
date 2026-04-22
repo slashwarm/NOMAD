@@ -317,7 +317,7 @@ export default function JourneyPublicPage() {
                     )}
 
                     {/* Content */}
-                    <div className="px-5 pt-4 pb-5">
+                    <div className="px-5 pt-4 pb-5 cursor-pointer" onClick={() => setViewingEntry(entry)}>
                       {/* Title (only when no single photo — photo has it in overlay) */}
                       {photos.length !== 1 && entry.title && (
                         <h3 className="text-[16px] font-semibold text-zinc-900 dark:text-white tracking-tight leading-snug mb-2">{entry.title}</h3>
